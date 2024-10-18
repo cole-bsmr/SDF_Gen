@@ -159,3 +159,14 @@ Tools to export SDF files.
 
 #### Export  
 - Press **Export** to save your SDF!
+
+# Features to add
+   -  Apply visual material when selecting a physics material
+   -  More feedback when an error occurs
+   -  Add more joint types
+   -  Allow collider creation in edit mode with collliders fitting to vert/face/edge selection
+   -  Add ability to export lights, camera, sensors, etc
+   -  Add more properties for models, links, etc
+   -  SDF file import
+   -  Add the ability to run the scene in Gazebo immediately after export
+   -  Improve the accuracy of the inertial values that are calculated
