@@ -170,3 +170,4 @@ Tools to export SDF files.
    -  SDF file import
    -  Add the ability to run the scene in Gazebo immediately after export
    -  Improve the accuracy of the inertial values that are calculated
+   -  Improve UI layout
