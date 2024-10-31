@@ -160,7 +160,7 @@ Tools to export SDF files.
 #### Export  
 - Press **Export** to save your SDF!
 
-# Features to add
+## Features to add
    -  Apply visual material when selecting a physics material
    -  More feedback when an error occurs
    -  Add more joint types
@@ -171,3 +171,8 @@ Tools to export SDF files.
    -  Add the ability to run the scene in Gazebo immediately after export
    -  Improve the accuracy of the inertial values that are calculated
    -  Improve UI layout
+
+
+## Version history
+### SDFGen 1.0.1
+ - Fixed issue with export path not always working.
