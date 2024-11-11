@@ -34,39 +34,38 @@ The Utilities panel provides quick access to importers for common file types and
 ### Select Small Parts  
 - Selects meshes below a certain volume, making it easier to remove insignificant parts and reduce polygon count.
 
-## Visibility  
-- Toggle visibility of elements to make scenes easier to read.<br>
-- Change joint visual colors, as they are black by default and can be hard to see.
+## Create Panel
 
-## Hierarchy  
+### Hierarchy Tab
 Organize the Blender outliner to match the SDF structure.
 
-### Create Model  
-- Creates a model collection in the outliner.
+#### Models
+- Use this area to manage your models. Each model is a separate Blender scene and you can use this section to add, remove, and rename models. 
 
-### Create Link  
+#### Create Link  
 - Creates a link collection.  
   - Drag it into a model collection.<br>
   - A visual and collider collection will also be created within the link.<br>
   - Place visual objects in the visual collection. Generated collisions go into the collider collection.
-
-### Clone Link  
-- Clones a link collection.
-
-### Create Include  
-- Adds an include element to the hierarchy.
-
-## Generate Colliders  
+#### Clone Link  
+- Clones the active link collection.
+#### Create Instance 
+- This will create an instance of another model in your current model/scene.
+### Colliders Tab
 Create both simple and mesh-based collisions.
 
-### Options  
-#### Per Object  
+#### Options  
+
+##### Show/Hide Colliders
+- Toggle to show or hide collision objects.
+
+##### Per Object  
 - Applies operations to each object individually or to the whole selection.<br>
 - When enabled, collisions are applied per object; otherwise, one collider fits the entire selection.
 
 ![Per Object Example](https://i.imgur.com/xhE0KGM.png)
 
-#### Minimal Box  
+##### Minimal Box  
 - Aligns the box collider to the object's local rotation or fits it tightly.<br>
 - Use this when the object’s rotation has been reset but needs proper alignment.
 
@@ -75,46 +74,52 @@ Create both simple and mesh-based collisions.
 - Credit to **iyadahmed** for the minimal-box script.<br>
   <https://gist.github.com/iyadahmed/512883896348a7e06f7a43f3ea8580af>
 
-#### Collider Margin  
+##### Collider Margin  
 - Adjusts the global distance between the mesh surface and colliders.
 
-### Simple Colliders  
-#### Box, Sphere, Cone, Plane  
+#### Simple Colliders  
+##### Box, Sphere, Cone, Plane  
 - Creates a shape that fits the selected geometry.
 
-#### Cylinder  
+##### Cylinder  
 - Creates a cylinder aligned along the X, Y, or Z axis.<br>
   - Press **X**, **Y**, or **Z** to select the axis.<br>
   - Confirm with **Enter** or cancel with **Esc**.
 
-#### Generate by Face  
+##### Generate by Face  
 - Creates box or cylinder collisions aligned to flat or cylindrical surfaces.<br>
   - Select a surface as the “end cap” for the shape, which extrudes from there.<br>
   - Adjust the extruded length if necessary.
 
-### Mesh Colliders  
+#### Mesh Colliders  
 - Generates a convex hull mesh with options to simplify it.
 
 ![Mesh Collider Example](https://i.imgur.com/IJpDfwR.png)
 
-#### Simplify  
+##### Simplify  
 - Reduces the triangle count of the generated mesh.
 
-#### Inflate  
+##### Inflate  
 - Inflates the mesh to fully cover the object when simplified.
 
-### Transform  
-#### Scale Cage  
+#### Transform  
+##### Scale Cage  
 - Uses Blender’s **Scale Cage** tool to transform collider shapes.
 
-#### Snap  
+##### Snap  
 - Enables face snapping, useful for aligning colliders with surfaces.
 
-#### Diameter  
+##### Diameter  
 - Adjusts the radius of cylinder collision shapes.
 
-## Generate Joints  
-Select the joint type from the dropdown, select an object, and press **Create Joint**.
+### Joints Tab
+##### Show/Hide Joints
+- Toggle to show or hide joints.
+##### Joint Color
+- Adjust the color of joint objects to be more visible
+
+#### Create Joint
+- Select the joint type from the dropdown, select an object, and press **Create Joint**.
 
 ## Properties  
 
@@ -174,5 +179,10 @@ Tools to export SDF files.
 
 
 ## Version history
+### SDFGen 1.0.2 
+- Fixed issue with exporting mesh colliders.
+- Models are no longer collections within scenes but are now the scenes themselves. 
+- Reworked UI. Create panels now organized in tabs and placed visualization options within those tabs as well.
+- Added some error reporting.
 ### SDFGen 1.0.1
  - Fixed issue with export path not always working.
