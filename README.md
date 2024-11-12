@@ -2,7 +2,7 @@
 A robotics-focused addon for Blender that converts Blender files to SDF.<br>
 
 ## Installation  
-1. **Download the addon:** [SDFGen addon](https://github.com/cole-bsmr/collidergen/blob/main/collidergen.py)<br>
+1. **Download the addon:** [SDFGen addon](https://github.com/cole-bsmr/SDFGen/blob/main/sdf_gen_1_0_2.py)<br>
 2. Go to **Edit > Preferences > Add-ons** and click the downward facing arrow in the upper-right. Click **Install from disk...** from the dropdown.<br>
 3. Select the `SDFGen.py` file. Activate it by checking the box next to it.<br>
 4. Press **N** to open the **N-panel** where you can access the tool.
