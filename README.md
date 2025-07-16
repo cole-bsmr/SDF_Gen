@@ -1,188 +1,112 @@
-# SDFGen
-A robotics-focused addon for Blender that converts Blender files to SDF.<br>
+# SDF_Gen Guide [WIP]
 
-## Installation  
-1. **Download the addon:** [SDFGen addon](https://github.com/cole-bsmr/SDFGen/blob/main/sdf_gen_1_0_2.py)<br>
-2. Go to **Edit > Preferences > Add-ons** and click the downward facing arrow in the upper-right. Click **Install from disk...** from the dropdown.<br>
-3. Select the `SDFGen.py` file. Activate it by checking the box next to it.<br>
-4. Press **N** to open the **N-panel** where you can access the tool.
-5. Note that after installing the addon Blender may attempt to aautomatically active the addon, however you may need to disable and enable the addon by unchecking and then checking the box next to it. 
+## Workspaces
+SDF_Gen is organized into **“workspaces”**. Each space is focused on a specific step in the SDF creation process. Accessing each workspace is done through a row of tabs at the top of the addon UI.
 
-# How to Use  
+---
 
-## Utilities  
-The Utilities panel provides quick access to importers for common file types and tools to prepare imported meshes for applying collision objects.
+## Utilities
+The `Utilities` tab is for processing imported meshes to make them suitable for working with in SDF Gen.
 
-### STL/FBX/OBJ/DAE Importers  
-- These importers load common mesh file types. They are the same as Blender's default tools.<br>
-- CAD formats like STEP are not natively supported.
+### Clean Mesh
+`Clean Mesh` attempts to repair any parts of the mesh that may have issues, such as incorrect scale transforms. It also removes any hierarchy or parenting which can cause issues with collision generation.
 
-### Clear Hierarchy / Reset Scale  
-- Cleans up imported meshes by removing hierarchies and deleting empty objects.<br>
-- Resets scale values to maintain accurate dimensions.<br>
-- It’s recommended to use this tool on all imported geometry.
+### Separation Tools
+The `Separation Tools` allow the mesh to be split into smaller parts. This allows for parts to be organized into the appropriate links and for more refined collision generation.
 
-### Separate Parts  
-- Identifies continuous geometry and separates it into distinct meshes.<br>
-- Use this for better control over collision placement if your geometry isn’t already split into parts.
+### Select Small Parts
+`Select Small Parts` is used to select parts under a certain volume. This is useful for removing geometry that may not be important but can potentially add a lot of polygons, such as small bolts and screws.
 
-![Separate Parts Example](https://i.imgur.com/m6bmgMc.png)
+---
 
-### Separate by Material  
-- Splits meshes based on their materials, useful for organizing the scene.
+## Links
+The `Links` workspace focuses on creating the basic structure of the SDF. This includes creating and naming models, links, visuals, etc.
 
-### Select Small Parts  
-- Selects meshes below a certain volume, making it easier to remove insignificant parts and reduce polygon count.
+### Models
+The `Models` tab uses Blender’s “scene” system. One Blender file can store multiple models. On export, each model will be exported as a separate SDF file. In this section, models can be added, removed, or renamed.
 
-## Create Panel
+### Collections
+The `Collections` section is for creating collections that will be used to organize the mesh objects into categories.
+* Clicking **`Create Link`** will create a collection that also houses a `visual` and `collision` collection.
+* Store your visual meshes in these `visual` collections.
+* Collision geometry will be stored in the `collision` collections when creating them in the `Colliders` workspace.
 
-### Hierarchy Tab
-Organize the Blender outliner to match the SDF structure.
+### Links List
+The `Links List` will show you an overview of your created links.
 
-#### Models
-- Use this area to manage your models. Each model is a separate Blender scene and you can use this section to add, remove, and rename models. 
+---
 
-#### Create Link  
-- Creates a link collection.  
-  - Drag it into a model collection.<br>
-  - A visual and collider collection will also be created within the link.<br>
-  - Place visual objects in the visual collection. Generated collisions go into the collider collection.
-#### Clone Link  
-- Clones the active link collection.
-#### Create Instance 
-- This will create an instance of another model in your current model/scene.
-### Colliders Tab
-Create both simple and mesh-based collisions.
+## Colliders
+The `Colliders` tab is for the creation of collision primitives and collision geometry.
 
-#### Options  
+### Primitive Colliders
+Create primitive colliders that will fit around a selected visual object. When creating a primitive collider, use the operation panel in the lower-left of the viewport to affect how the primitive is applied.
 
-##### Show/Hide Colliders
-- Toggle to show or hide collision objects.
+#### Operation Panel
+* **`Minimal Box`**: Fits the box as tightly as possible to the object, ignoring the object's origin orientation. This is particularly useful for objects that are at an angle that’s not reflected in the object’s rotation transform.
+* **`Per Object`**: Creates a collider for each of the selected objects, as opposed to one single collider that fits around the entire selection.
+* **`Axis Set`**: Changes the orientation of objects such as cylinders and planes.
 
-##### Per Object  
-- Applies operations to each object individually or to the whole selection.<br>
-- When enabled, collisions are applied per object; otherwise, one collider fits the entire selection.
+### Mesh Collider
+Creates a convex hull mesh collider. This method is less efficient but provides higher accuracy. Use the operation panel to:
+* Reduce the resolution of the convex hull mesh using the **`Mesh Resolution`** slider.
+* Adjust the **`Mesh Margin`** slider to ensure all parts of the visual object are contained within the collider as mesh resolution is lowered.
 
-![Per Object Example](https://i.imgur.com/xhE0KGM.png)
+### Transform
+Colliders will often need to be adjusted to properly fit the underlying visual objects. Use these tools to manually adjust the colliders.
+* The **`Scale Cage`** tool can be used to push and pull the boundaries of the collision primitive.
+* The **`Face Snap`** setting allows those boundaries to be snapped to the surface of the underlying visual object.
+* **`Collider Margin`** is a global setting used to create a margin between the visual object and the collision. This applies to all colliders in the scene.
 
-##### Minimal Box  
-- Aligns the box collider to the object's local rotation or fits it tightly.<br>
-- Use this when the object’s rotation has been reset but needs proper alignment.
+> **💡 Tip:**
+> For primitive colliders, select multiple objects and turn off `Per Object` to create colliders that cover large parts of the object model. Not all objects need to be selected, just the objects at the outer edge of where you want the collision.
 
-![Minimal Box Example](https://i.imgur.com/vTnr4ON.png)
+---
 
-- Credit to **iyadahmed** for the minimal-box script.<br>
-  <https://gist.github.com/iyadahmed/512883896348a7e06f7a43f3ea8580af>
+## Joints
+The `Joints` tab is used to create joints that can then be controlled in a simulation.
 
-##### Collider Margin  
-- Adjusts the global distance between the mesh surface and colliders.
+When creating a joint, a name and child link must be specified.
+* After creation, you can use **`Adjust Joints`** to move and rotate joints without affecting the child link position and rotation.
+* Use the **`Delete Joint`** button to remove unwanted joints.
+* Use the **`Reset Joints`** button to return all joints to their rest position if you’ve manipulated them.
 
-#### Simple Colliders  
-##### Box, Sphere, Cone, Plane  
-- Creates a shape that fits the selected geometry.
+### Joint Hierarchy
+The `Joint Hierarchy` section will show all your links and their parent/child hierarchy.
 
-##### Cylinder  
-- Creates a cylinder aligned along the X, Y, or Z axis.<br>
-  - Press **X**, **Y**, or **Z** to select the axis.<br>
-  - Confirm with **Enter** or cancel with **Esc**.
+### Joint Properties
+When a joint is selected, you can change its display size, set the parent link, and adjust its limits.
 
-##### Generate by Face  
-- Creates box or cylinder collisions aligned to flat or cylindrical surfaces.<br>
-  - Select a surface as the “end cap” for the shape, which extrudes from there.<br>
-  - Adjust the extruded length if necessary.
+> **💡 Tips:**
+> * Continuous joints are simply revolute joints with the **`Continuous Joint`** box checked in the joint properties.
+> * Always use the **`Adjust Joint Positions/Rotations`** button to move joints.
+> * Always use the **`Delete Joints`** button when removing a joint.
+> * Ensure all joints have a parent link set.
 
-#### Mesh Colliders  
-- Generates a convex hull mesh with options to simplify it.
+---
 
-![Mesh Collider Example](https://i.imgur.com/IJpDfwR.png)
+## Materials
+The `Materials` tab is used to set the visual material properties of objects, such as color and whether they appear metallic.
 
-##### Simplify  
-- Reduces the triangle count of the generated mesh.
+The `Material List` will show all materials that are applied to an object. Since materials can be applied to individual faces, one object can contain multiple materials.
+* Use the **`+`** and **`-`** buttons to add and remove materials.
+* Use the **`X`** button on the right to remove any materials that aren’t applied to any faces.
 
-##### Inflate  
-- Inflates the mesh to fully cover the object when simplified.
+Set the material properties in the `Material Properties` panel. Use the **`Replace Material`** tool to replace the material with a preset material. Color information can be transferred using the **`Keep Color`** checkbox.
 
-#### Transform  
-##### Scale Cage  
-- Uses Blender’s **Scale Cage** tool to transform collider shapes.
+> **💡 Tips:**
+> * `Metalness` should always be set to either `1` or `0`.
+> * CAD models often have basic materials already applied. Use the `Replace Material` tool to quickly replace these with improved materials while retaining their association with objects/faces.
+> * Use the standard material editor or the shader editor for more advanced material creation.
+> * A material can be easily swapped for an existing material by clicking the sphere icon to the left of the material name.
 
-##### Snap  
-- Enables face snapping, useful for aligning colliders with surfaces.
+---
 
-##### Diameter  
-- Adjusts the radius of cylinder collision shapes.
+## Export
+The `Export` tab is where the SDF can be generated and all meshes will be exported.
+1.  Choose your mesh format for visual meshes (e.g., `GLB` is recommended).
+2.  Select a file path. The default **`//sdf_exports/`** will save the files to a folder called **`sdf_exports`** within the folder your blender file is saved. You must save the blender file first for this to work.
+3.  After clicking **`Export SDF`**, a folder will be created containing the generated `model.sdf` file, along with all visual meshes in the chosen file format and any mesh colliders in the `STL` file format.
 
-### Joints Tab
-##### Show/Hide Joints
-- Toggle to show or hide joints.
-##### Joint Color
-- Adjust the color of joint objects to be more visible
-
-#### Create Joint
-- Select the joint type from the dropdown, select an object, and press **Create Joint**.
-
-## Properties  
-
-### Joint Properties  
-#### Parent and Child  
-- Set parent-child relationships by selecting or dragging link collections.
-
-#### Continuous  
-- Available for revolute joints, allowing 360-degree rotation without limits.
-
-#### Lower and Upper Limit  
-- Sets joint limits.<br>
-  - For revolute joints: degrees<br>
-  - For prismatic joints: distance units
-
-### Visual Properties  
-#### Material  
-- Select a material. Materials have densities used in inertial calculations.
-
-#### Custom Density  
-- Enable this to use a custom density.
-
-#### Decimate  
-- Reduces the polygon count of your object. Adjust the **Ratio** slider to control decimation.
-
-### Link Properties  
-#### Static  
-- Choose whether a link is static or dynamic.<br>
-- Inertial properties are generated only for dynamic links.
-
-## Export  
-Tools to export SDF files.
-
-#### Mesh File Type  
-- Choose a file type for visual meshes. Collision meshes are always exported as STL.
-
-#### Mesh Files Path  
-- Define the path prefix for mesh files in the SDF.
-
-#### File Directory  
-- Select the folder where SDF and generated mesh files will be saved.
-
-#### Export  
-- Press **Export** to save your SDF!
-
-## Features to add
-   -  Apply visual material when selecting a physics material
-   -  More feedback when an error occurs
-   -  Add more joint types
-   -  Allow collider creation in edit mode with collliders fitting to vert/face/edge selection
-   -  Add ability to export lights, camera, sensors, etc
-   -  Add more properties for models, links, etc
-   -  SDF file import
-   -  Add the ability to run the scene in Gazebo immediately after export
-   -  Improve the accuracy of the inertial values that are calculated
-   -  Improve UI layout
-
-
-## Version history
-### SDFGen 1.0.2 
-- Fixed issue with exporting mesh colliders.
-- Models are no longer collections within scenes but are now the scenes themselves. 
-- Reworked UI. Create panels now organized in tabs and placed visualization options within those tabs as well.
-- Added some error reporting.
-### SDFGen 1.0.1
- - Fixed issue with export path not always working.
+### Config file
+Check the "export config" box and fill out the fields to export a model.config file.
