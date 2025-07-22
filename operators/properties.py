@@ -1,5 +1,7 @@
 import bpy
 from ..operators.create import switch_to_viewlayer
+from ..operators.general_functions import get_armature
+from mathutils import Vector
 
 # from ..operators.colliders import update_face_snap
 # from ..operators.colliders import update_visibility
@@ -184,3 +186,132 @@ bpy.types.Object.collider_radius = bpy.props.FloatProperty(
     min=0.001,
     update=update_collider_radius,
 )
+
+def update_move_joints(self, context):
+    """Updates the move_joints property."""
+
+    def enable_bone_constraints(context, enable_bone_constraints):
+        for pose_bone in context.object.pose.bones:
+            for constraint in pose_bone.constraints:
+                constraint.enabled = enable_bone_constraints
+
+    def bone_to_pose(context):
+        # bpy.ops.object.mode_set(mode='EDIT')
+        armature = context.object
+        for pose_bone in armature.pose.bones:
+            bpy.ops.pose.armature_apply(selected=False)
+
+    def unparent_bones(context):
+        """Saves parent data to a custom property on the armature and then un-parents."""
+        stored_parent_data = {}
+        
+        armature = context.object
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        for bone in armature.data.edit_bones:
+            parent_name = bone.parent.name if bone.parent else None
+            
+
+            stored_parent_data[bone.name] = {
+                'parent': parent_name,
+                'connected': bone.use_connect
+            }
+            
+            bone.parent = None
+                
+        armature.data['bone_parent_data'] = stored_parent_data
+        
+        bpy.ops.object.mode_set(mode='POSE')
+
+    def restore_bone_parents(context):
+        """Restores parent relationships."""
+
+        print("Restoring bone parents...")
+        armature = context.object
+
+        parent_data = armature.data.get('bone_parent_data')
+
+        if not parent_data:
+            print("Warning: No parent data found to restore.")
+            return
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        for bone_name, parent_info in parent_data.items():
+            edit_bone = armature.data.edit_bones.get(bone_name)
+            
+            if not edit_bone:
+                continue
+            
+            parent_name = parent_info['parent']
+            use_connect = parent_info['connected']
+            
+            if parent_name:
+                parent_bone = armature.data.edit_bones.get(parent_name)
+                if parent_bone:
+                    edit_bone.parent = parent_bone
+                    edit_bone.use_connect = use_connect
+            else:
+                edit_bone.parent = None
+
+        del armature.data['bone_parent_data']
+        
+        bpy.ops.object.mode_set(mode='POSE')
+
+    def enable_constraints(context, enable_childof):
+        # Disables all 'Child Of' constraints in the scene.
+        for obj in context.scene.objects:
+            for constraint in obj.constraints:
+                if constraint.type == 'CHILD_OF':
+                    constraint.enabled = enable_childof
+
+    def set_inverse(context):
+        previous_selection = None
+        # Store previous bone selection
+        if bpy.context.active_pose_bone:
+            previous_selection = bpy.context.active_pose_bone.name
+        # Switch to object mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Iterate through all objects in the scene
+        for obj in context.scene.objects:
+            # Check if the object has any constraints
+            if obj.constraints:
+                # Iterate through the object's constraints
+                for constraint in obj.constraints:
+                    # Check if the constraint is a Child Of constraint
+                    if constraint.type == 'CHILD_OF':
+                        bpy.context.view_layer.objects.active = obj
+                        # bpy.context.view_layer.objects.active = obj_inverse
+
+                        # Set the inverse
+                        bpy.ops.constraint.childof_set_inverse(constraint="Child Of", owner='OBJECT')
+
+        armature_object = get_armature()
+        bpy.context.view_layer.objects.active = armature_object
+        bpy.ops.object.mode_set(mode='POSE')
+        if previous_selection != None:
+            pose_bone = armature_object.pose.bones.get(previous_selection)
+            pose_bone.bone.select = True
+            armature_object.data.bones.active = pose_bone.bone
+        
+    if bpy.context.scene.move_joints == True:
+        # Reset poses
+        for bone in bpy.context.active_object.pose.bones:
+            bone.location = (0, 0, 0)
+            bone.rotation_euler = (0, 0, 0)
+        # Unlink objects from bones
+        enable_constraints(context, False)
+
+        # Disable bone constraints
+        enable_bone_constraints(context, False)
+
+        # Unlink bones
+        unparent_bones(context)
+    
+    if bpy.context.scene.move_joints == False:
+        bone_to_pose(context)
+        restore_bone_parents(context)
+        enable_constraints(context, True)
+        enable_bone_constraints(context, True)
+        set_inverse(context)

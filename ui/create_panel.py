@@ -114,7 +114,7 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                 if bpy.context.mode == 'POSE':
                     row = box.row()
                     box.operator("scene.create_joint", text="Create Joint")
-                    box.operator("object.move_joint", depress=MoveJoint.is_running, text="Adjust Joint Positions/Rotations")
+                    box.prop(bpy.context.scene, "move_joints", toggle=True, text="Adjust Joint Positions/Rotations")
                     if MoveJoint.is_running:
                         box.label(text="Pres ESC to cancel")
                         box.operator("object.joint_to_cursor", text="Move joint to cursor")

@@ -59,18 +59,18 @@ class SDFG_OT_CreateJoint(bpy.types.Operator):
         description="List of currently selectable child links."
     ) # type: ignore
 
-    joint_location: bpy.props.FloatVectorProperty(
-        name="joint Location",
-        description="Set the location of the joint",
-        default=(0.0, 0.0, 0.0),
-    ) # type: ignore
+    # joint_location: bpy.props.FloatVectorProperty(
+    #     name="joint Location",
+    #     description="Set the location of the joint",
+    #     default=(0.0, 0.0, 0.0),
+    # ) # type: ignore
 
-    joint_rotation: bpy.props.FloatVectorProperty(
-        name="Joint Rotation",
-        description="Set the rotation of the joint",
-        default=(0.0, 0.0, 0.0),
-        subtype='EULER'
-    ) # type: ignore
+    # joint_rotation: bpy.props.FloatVectorProperty(
+    #     name="Joint Rotation",
+    #     description="Set the rotation of the joint",
+    #     default=(0.0, 0.0, 0.0),
+    #     subtype='EULER'
+    # ) # type: ignore
 
     joint_name: bpy.props.StringProperty(
         name="Joint Name",
@@ -185,8 +185,8 @@ class SDFG_OT_CreateJoint(bpy.types.Operator):
         self.show_in_last_operation = True
     
         # bpy.ops.object.collection_instance_add()
-        context.active_object.location = self.joint_location
-        context.active_object.rotation_euler = self.joint_rotation
+        # context.active_object.location = self.joint_location
+        # context.active_object.rotation_euler = self.joint_rotation
 
         # Set child_link
         # child_link = bpy.context.active_pose_bone.joint_grp.child_link
