@@ -26,7 +26,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
     path = bpy.context.window_manager.sdf_export_file_path
 
     def make_sdf_folder(self, model_name):
-        print("SOMETHING")
+        self.path = bpy.context.window_manager.sdf_export_file_path
         folder_path = bpy.path.abspath(os.path.join(self.path, model_name))
          # Check if the folder exists
         if os.path.exists(folder_path):
@@ -72,14 +72,26 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                 bone_name = edit_bone.name
 
                 # Switch back to POSE mode to write SDF
-                bpy.ops.object.mode_set(mode='POSE')
+                parent_name = pose_bone.joint_grp.sdf_parent_link
+                child_name = pose_bone.joint_grp.child_link
+                # # previous_link = get_link(parent_name)
+                previous_bone_name = get_joint_name(parent_name)
+                if previous_bone_name is None:
+                    pose_string = f"  <pose relative_to='{parent_name}'/>\n"
+                else:
+                    edit_previous_bone = (armature.data.edit_bones[previous_bone_name])
+                    position_vector = edit_bone.head - edit_previous_bone.head
+                    # raise Exception(f"Testing exception {previous_bone_name}")
+                    relative_to_location = f"{round(position_vector.x, 4)} {round(position_vector.y, 4)} {round(position_vector.z, 4)} 0 0 0"
+                    pose_string = f"  <pose relative_to='{parent_name}'>{relative_to_location}</pose>\n"
 
+                bpy.ops.object.mode_set(mode='POSE')
                 joint_type = pose_bone.joint_grp.joint_type.replace("Joint", "").lower()
                 write_text = (
                     f"\n<joint name=\"{pose_bone.name}\" type=\"{joint_type}\">\n"
-                    f"  <parent>{pose_bone.joint_grp.sdf_parent_link}</parent>\n"
-                    f"  <child>{pose_bone.joint_grp.child_link}</child>\n"
-                    # f"  <pose>{formatted_location}, 0, 0, 0</pose>\n"
+                    f"{pose_string}"
+                    f"  <parent>{parent_name}</parent>\n"
+                    f"  <child>{child_name}</child>\n"
                     )
 
                 if pose_bone.joint_grp.joint_type in {'RevoluteJoint', 'FixedJoint', 'PrismaticJoint'}:
@@ -196,11 +208,15 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                             bpy.ops.object.select_all(action="DESELECT")
                             joined_obj.select_set(True)
 
-                            bone_location = get_joint_location(link_collection.name)
+                            # bone_location = get_joint_location(link_collection.name)
+                            previous_joint_name = get_previous_bone_name(link_collection.name)
+                            
+                            
                             joined_translate = Vector((0.0, 0.0, 0.0))
-                            if bone_location != None:
+                            if previous_joint_name != None:
+                                bone_location = get_joint_location_from_name(previous_joint_name)
                                 write_text = (
-                                    f'\n<pose>{round(bone_location.x, 6)} {round(bone_location.y, 6)} {round(bone_location.z, 6)} 0.0 0.0 0.0</pose>\n'
+                                    f"\n<pose relative_to='{previous_joint_name}'/>\n"
                                 )
                                 self.write_to_sdf(sdf_file_path, write_text)
 
@@ -520,3 +536,42 @@ def get_joint_location(link_name):
                     break
 
     return bone_location
+
+def get_joint_location_from_name(joint_name):
+    armature_object = get_armature()
+    return armature_object.data.bones[joint_name].head_local
+
+# Checks if link is the child of a joint
+def get_previous_bone_name(link_name):
+
+    # Get the armature object
+    armature_object = get_armature()
+
+    if armature_object == None:
+        return None
+
+    else:
+        # Loop through pose bones
+        for bone in armature_object.pose.bones:
+            if hasattr(bone, 'joint_grp') and hasattr(bone.joint_grp, 'child_link'):
+                if bone.joint_grp.child_link == link_name:
+                    return bone.name
+
+    return None
+
+# Checks if link is the child of a joint
+def get_joint_name(link_name):
+    # Get the armature object
+    armature = get_armature()
+
+    if armature == None:
+        return None
+
+    else:
+        # Loop through pose bones
+        for bone in armature.pose.bones:
+            if hasattr(bone, 'joint_grp') and hasattr(bone.joint_grp, 'child_link'):
+                if bone.joint_grp.child_link == link_name:
+                    return bone.name
+
+    return None
