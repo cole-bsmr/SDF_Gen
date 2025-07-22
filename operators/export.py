@@ -52,7 +52,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
         with open(sdf_file_path, "a") as file:
             file.write(write_text)
 
-    def export_joints(self, sdf_file_path):
+    def export_joints(self, sdf_file_path, use_relative_link_poses):
         armature = get_armature()
         print(bpy.context.scene, armature)
         if armature: 
@@ -64,32 +64,30 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                 # Switch to EDIT mode to get correct bone data                
                 bpy.ops.object.mode_set(mode='EDIT')
                 edit_bone = (armature.data.edit_bones[pose_bone.name])
-                edit_bone_location = edit_bone.head
-                formatted_location = f"{edit_bone_location.x:.4f}, {edit_bone_location.y:.4f}, {edit_bone_location.z:.4f}" 
                 direction_vector = edit_bone.tail - edit_bone.head
                 direction_vector.normalize()
                 formatted_direction = f"{round(direction_vector.x, 4)} {round(direction_vector.y, 4)} {round(direction_vector.z, 4)}"
-                bone_name = edit_bone.name
 
-                # Switch back to POSE mode to write SDF
                 parent_name = pose_bone.joint_grp.sdf_parent_link
                 child_name = pose_bone.joint_grp.child_link
-                # # previous_link = get_link(parent_name)
-                previous_bone_name = get_joint_name(parent_name)
-                if previous_bone_name is None:
-                    pose_string = f"  <pose relative_to='{parent_name}'/>\n"
-                else:
-                    edit_previous_bone = (armature.data.edit_bones[previous_bone_name])
-                    position_vector = edit_bone.head - edit_previous_bone.head
-                    # raise Exception(f"Testing exception {previous_bone_name}")
-                    relative_to_location = f"{round(position_vector.x, 4)} {round(position_vector.y, 4)} {round(position_vector.z, 4)} 0 0 0"
-                    pose_string = f"  <pose relative_to='{parent_name}'>{relative_to_location}</pose>\n"
-
-                bpy.ops.object.mode_set(mode='POSE')
+                
                 joint_type = pose_bone.joint_grp.joint_type.replace("Joint", "").lower()
-                write_text = (
-                    f"\n<joint name=\"{pose_bone.name}\" type=\"{joint_type}\">\n"
-                    f"{pose_string}"
+                write_text = (f"\n<joint name=\"{pose_bone.name}\" type=\"{joint_type}\">\n")
+                if use_relative_link_poses:
+                    previous_bone_name = get_joint_name(parent_name)
+                    
+                    if previous_bone_name is None:
+                        pose_string = f"  <pose relative_to='{parent_name}'/>\n"
+                    else:
+                        edit_previous_bone = (armature.data.edit_bones[previous_bone_name])
+                        position_vector = edit_bone.head - edit_previous_bone.head
+                        relative_to_location = f"{round(position_vector.x, 4)} {round(position_vector.y, 4)} {round(position_vector.z, 4)} 0 0 0"
+                        pose_string = f"  <pose relative_to='{parent_name}'>{relative_to_location}</pose>\n"
+                    write_text += (f"{pose_string}")
+
+                # Switch back to POSE mode to write SDF
+                bpy.ops.object.mode_set(mode='POSE')
+                write_text += (
                     f"  <parent>{parent_name}</parent>\n"
                     f"  <child>{child_name}</child>\n"
                     )
@@ -179,7 +177,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
 
         self.write_to_sdf(sdf_file_path, write_text)
 
-    def loop_links(self, model_scene, all_collections, sdf_file_path, folder_path):
+    def loop_links(self, model_scene, all_collections, sdf_file_path, folder_path, use_relative_link_poses):
         all_collections = get_all_collections()
         link_translate = Vector((0.0, 0.0, 0.0))
         joined_translate = Vector((0.0, 0.0, 0.0))
@@ -215,9 +213,12 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                             joined_translate = Vector((0.0, 0.0, 0.0))
                             if previous_joint_name != None:
                                 bone_location = get_joint_location_from_name(previous_joint_name)
-                                write_text = (
-                                    f"\n<pose relative_to='{previous_joint_name}'/>\n"
-                                )
+                                if use_relative_link_poses:
+                                    write_text = (
+                                        f"\n<pose relative_to='{previous_joint_name}'/>\n"
+                                    )
+                                else:
+                                    write_text = (f'\n<pose>{round(bone_location.x, 6)} {round(bone_location.y, 6)} {round(bone_location.z, 6)} 0.0 0.0 0.0</pose>\n')
                                 self.write_to_sdf(sdf_file_path, write_text)
 
                                 joined_translate = -bone_location
@@ -313,7 +314,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                                 if collider_object.collider_type == "MeshCollider":
                                     bpy.ops.object.select_all(action="DESELECT")
                                     collider_object.select_set(True)
-                                    mesh_collider_location = collider_object.location.location.copy()
+                                    mesh_collider_location = collider_object.location.copy()
                                     collider_object.location += joined_translate
                                     bpy.ops.wm.stl_export(
                                         filepath=os.path.join(
@@ -458,8 +459,8 @@ class SDF_OT_export_sdf(bpy.types.Operator):
             self.write_to_sdf(sdf_file_path, write_text)
 
             all_collections = get_all_collections()
-
-            self.loop_links(model_scene, all_collections, sdf_file_path, folder_path)
+            
+            self.loop_links(model_scene, all_collections, sdf_file_path, folder_path, model_scene.use_relative_link_poses)
 
             # Check for armature
             found_armature = False
@@ -476,7 +477,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
 
             # Export joints
             if found_armature:
-                self.export_joints(sdf_file_path)
+                self.export_joints(sdf_file_path, model_scene.use_relative_link_poses)
 
 
             
