@@ -7,7 +7,6 @@ from ..operators.general_functions import links_check
 from ..operators.general_functions import get_armature
 from ..operators.general_functions import get_instances_collection
 from ..operators.create import switch_to_viewlayer
-from ..operators.joints import MoveJoint
 
 # bpy.types.Scene.armature_found = bpy.props.BoolProperty(default=False)
 
@@ -115,10 +114,6 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                     row = box.row()
                     box.operator("scene.create_joint", text="Create Joint")
                     box.prop(bpy.context.scene, "move_joints", toggle=True, text="Adjust Joint Positions/Rotations")
-                    if MoveJoint.is_running:
-                        box.label(text="Pres ESC to cancel")
-                        box.operator("object.joint_to_cursor", text="Move joint to cursor")
-
                     box.operator("scene.delete_joint", text="Delete Joints")
                     box.operator("scene.reset_joints", text="Reset Joints")
 

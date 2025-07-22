@@ -315,3 +315,10 @@ def update_move_joints(self, context):
         enable_constraints(context, True)
         enable_bone_constraints(context, True)
         set_inverse(context)
+
+bpy.types.Scene.move_joints = bpy.props.BoolProperty(
+    name="Move Joints",
+    description="Toggles the joint constraints and parent/child relationships so that joints can be moved.",
+    default=False,
+    update=update_move_joints,
+)
