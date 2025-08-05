@@ -87,6 +87,8 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
             col = split.column()
             col.operator("mesh.add_collider", text="Mesh Collider").shape_type = "Mesh"
+            col.prop(bpy.context.scene, "convex_hull", text="Convex Hull")
+            
             col.label(text="Transform:")
             col.operator("wm.tool_set_by_id", text="Scale Cage").name = (
                 "builtin.scale_cage"

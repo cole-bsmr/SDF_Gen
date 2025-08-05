@@ -169,6 +169,7 @@ bpy.types.Scene.model_description = bpy.props.StringProperty(
 )
 
 bpy.types.Scene.use_relative_link_poses = bpy.props.BoolProperty(default=False)
+bpy.types.Scene.convex_hull = bpy.props.BoolProperty(default=False)
 
 def update_collider_radius(self, context):
     """Updates the collider_radius property."""

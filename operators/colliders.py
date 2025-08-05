@@ -145,8 +145,10 @@ class MESH_OT_add_collider(bpy.types.Operator):
                 .lower()
                 .replace(".", "")
             )
-            # Add the modifier that allows adjustment of the collider safety margin
-            add_margin_modifier()
+            #TODO(lukaszpi): Combine mesh margin modifier with the generic one 
+            if self.shape_type != "Mesh":
+                # Add the modifier that allows adjustment of the collider safety margin
+                add_margin_modifier()
         
         # Remove duplicate object
         if joined_visual:
@@ -362,10 +364,11 @@ def mesh_collider(visual_obj, mesh_resolution, mesh_inflate):
     bpy.ops.object.select_all(action="DESELECT")
     visual_obj.select_set(True)
     bpy.ops.object.duplicate(linked=False)
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.select_mode(type="VERT")
-    bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.mesh.convex_hull()
+    if bpy.context.scene.convex_hull:
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="VERT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.mesh.convex_hull()
     bpy.ops.object.mode_set(mode="OBJECT")
 
     if bpy.context.active_object.collider_type:
@@ -395,15 +398,16 @@ def mesh_collider(visual_obj, mesh_resolution, mesh_inflate):
 
     # Add mesh collider margin for ensuring lower poly mesh collider fully encapsulates visual
     cm_mod = bpy.context.active_object.modifiers.new(
-        name="Mesh Collider Margin", type="SOLIDIFY"
+        name="Collider Margin", type="SOLIDIFY"
     )
     # Set values for modifier
     cm_mod.offset = 1.0
     cm_mod.use_rim_only = True
-    cm_mod.use_even_offset = True
+    cm_mod.use_even_offset = False
     cm_mod.thickness = 0.00
     # Set mesh margin property so it can be controlled via menu
-    bpy.context.active_object.modifiers["Mesh Collider Margin"].thickness = mesh_inflate
+    #TODO(lukaszpi): Investigate why it works poorly
+    # bpy.context.active_object.modifiers["Collider Margin"].thickness = mesh_inflate
 
 
 def obj_rotating_calipers_full(obj, DEBUG=False):
