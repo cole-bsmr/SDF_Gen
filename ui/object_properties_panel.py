@@ -85,6 +85,56 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         else:
             layout.operator("object.shade_auto_smooth", text="Smooth Mesh")
 
+class SDFG_PT_CollisionPropertiesPanel(bpy.types.Panel):
+    bl_label = "Collision Properties Panel"
+    bl_idname = "SDFG_PT_CollisionPropertiesPanel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "SDF_Gen"
+
+    @classmethod
+    def poll(cls, context):
+        if not context.object == None:
+            # Ensure there are selected objects
+            if not context.selected_objects:
+                return False
+
+            if not context.selected_ids:
+                return False
+            
+            if not context.object.type == 'MESH':
+                return False
+
+        # Get the active object
+        active_obj = context.active_object
+
+        # Ensure there is an active object and it is linked to collections
+        if active_obj and active_obj.users_collection:
+            # Check if any collection name contains "_visual"
+            return any("_colliders" in col.name for col in active_obj.users_collection)
+
+        return False
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Collider Properties: " + bpy.context.active_object.name)
+        
+        
+        box = layout.box()
+        if context.object.modifiers.get('Mesh Collider Resolution'):
+            box.label(text="Mesh Collider Resolution")
+            box.prop(context.object.modifiers['Mesh Collider Resolution'], "ratio", text="Mesh Collider Resolution")
+            triangle_count = len(context.object.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.loop_triangles)
+            box.label(text=f"Triangles: {triangle_count}")
+        else:
+            layout.operator("object.modifier_add", text="Mesh Collider Resolution").type = 'DECIMATE'
+        if context.object.modifiers.get('Collider Margin'):
+            # box = layout.box()
+            box.label(text="Collider Margin")
+            box.prop(context.object.modifiers['Collider Margin'], 'thickness', text="Margin")
+        else:
+            layout.operator("object.modifier_add", text="Collider Margin").type = 'SOLIDIFY'
+
 class LinkCollectionProperties(bpy.types.PropertyGroup):
     bl_label = "Link Properties"
     bl_idname = "LinkCollectionProperties"
