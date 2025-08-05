@@ -75,14 +75,14 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                 write_text = (f"\n<joint name=\"{pose_bone.name}\" type=\"{joint_type}\">\n")
                 if use_relative_link_poses:
                     previous_bone_name = get_joint_name(parent_name)
-                    
                     if previous_bone_name is None:
-                        pose_string = f"  <pose relative_to='{parent_name}'/>\n"
+                        position_vector = edit_bone.head
                     else:
                         edit_previous_bone = (armature.data.edit_bones[previous_bone_name])
                         position_vector = edit_bone.head - edit_previous_bone.head
-                        relative_to_location = f"{round(position_vector.x, 4)} {round(position_vector.y, 4)} {round(position_vector.z, 4)} 0 0 0"
-                        pose_string = f"  <pose relative_to='{parent_name}'>{relative_to_location}</pose>\n"
+                    
+                    relative_to_location = f"{round(position_vector.x, 4)} {round(position_vector.y, 4)} {round(position_vector.z, 4)} 0 0 0"
+                    pose_string = f"  <pose relative_to='{parent_name}'>{relative_to_location}</pose>\n"
                     write_text += (f"{pose_string}")
 
                 # Switch back to POSE mode to write SDF
