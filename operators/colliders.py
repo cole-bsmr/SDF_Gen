@@ -40,10 +40,6 @@ class MESH_OT_add_collider(bpy.types.Operator):
         default="Z",
     )  # type: ignore
 
-    per_obj: bpy.props.BoolProperty(
-        name="Per Object", description="Toggle for multiple selection behavior.", default=True
-    )  # type: ignore
-
     plane_flip: bpy.props.BoolProperty(
         name="Flip direction", description="Flip the direction of plane collider normal.", default=False
     )  # type: ignore
@@ -87,8 +83,6 @@ class MESH_OT_add_collider(bpy.types.Operator):
         if self.shape_type == "Plane":
             layout.prop(self, "plane_flip")
 
-        layout.prop(self, "per_obj")
-
         if self.shape_type == "Mesh":
             layout.prop(self, "mesh_resolution")
             layout.prop(self, "mesh_inflate")
@@ -104,7 +98,7 @@ class MESH_OT_add_collider(bpy.types.Operator):
         joined_visual = None
 
         # Join objects if per object is turned off
-        if self.per_obj == False:
+        if bpy.context.scene.per_obj == False:
             bpy.ops.object.duplicate()
             bpy.ops.object.join()
             bpy.context.active_object.select_set(True)

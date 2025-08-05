@@ -73,6 +73,10 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
         elif scene.tab_option == "COLLIDERS":
             links_found = links_check()
+            
+            split = box.split()
+            row = split.row()
+            row.prop(bpy.context.scene, "per_obj", text="Per object")
             split = box.split()
             col = split.column()
 
