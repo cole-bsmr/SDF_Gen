@@ -285,7 +285,7 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             if context.scene.sdf_options_expand:
                 box = layout.box()
                 col = box.column()
-                col.prop(context.scene, "relative_link_poses", text="Relative link poses")
+                col.prop(context.scene, "use_relative_link_poses", text="Relative link poses")
 
             col = layout.column()
             col.prop(context.scene, "export_config", text="Export Config File")
