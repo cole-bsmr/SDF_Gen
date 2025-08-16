@@ -37,32 +37,28 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        if not context.object == None:
-            # Ensure there are selected objects
-            if not context.selected_objects:
-                return False
+        if context.object == None:
+            return False
 
-            if not context.selected_ids:
-                return False
-            
-            if not context.object.type == 'MESH':
-                return False
+        if not context.selected_objects:
+            return False
 
-        # Get the active object
-        active_obj = context.active_object
+        if not context.selected_ids:
+            return False
+        
+        if not context.object.type == 'MESH':
+            return False
+        
+        if context.active_object.object_type == "ColliderObject":
+            return False
 
-        # Ensure there is an active object and it is linked to collections
-        if active_obj and active_obj.users_collection:
-            # Check if any collection name contains "_visual"
-            return any("_visual" in col.name for col in active_obj.users_collection)
-
-        return False
+        return True
 
     def draw(self, context):
         layout = self.layout
         layout.label(text="Visual Properties: " + bpy.context.active_object.name)
-        # box = layout.box()
-        
+
+        layout.operator("object.merge_verts", text="Merge Vertices")
         
         if context.object.modifiers.get('Decimate'):
             box = layout.box()
@@ -73,7 +69,6 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         else:
             layout.operator("object.modifier_add", text="Decimate Mesh").type = 'DECIMATE'
         
-        # box = layout.box()
         if context.object.modifiers.get('Smooth by Angle'):
             box = layout.box()
             box.label(text="Smooth Mesh")
@@ -81,7 +76,7 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
             row = box.row()
             row.label(text="Ignore Sharpness:")
             row.prop(context.object.modifiers['Smooth by Angle'], '["Socket_1"]', text="")
-        # box.prop(context.object, "active_material_index", text="")
+
         else:
             layout.operator("object.shade_auto_smooth", text="Smooth Mesh")
 

@@ -78,14 +78,16 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             if links_found == False:
                 col.label(text="Something")
 
+            col.label(text="Create:")
             col.operator("mesh.add_collider", text="Box").shape_type = "Box"
             col.operator("mesh.add_collider", text="Cylinder").shape_type = "Cylinder"
             col.operator("mesh.add_collider", text="Sphere").shape_type = "Sphere"
             col.operator("mesh.add_collider", text="Cone").shape_type = "Cone"
             col.operator("mesh.add_collider", text="Plane").shape_type = "Plane"
+            col.operator("mesh.add_collider", text="Mesh Collider").shape_type = "Mesh"
 
             col = split.column()
-            col.operator("mesh.add_collider", text="Mesh Collider").shape_type = "Mesh"
+            
             col.label(text="Transform:")
             col.operator("wm.tool_set_by_id", text="Scale Cage").name = (
                 "builtin.scale_cage"
@@ -97,11 +99,8 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                 icon="SNAP_ON" if bpy.context.scene.face_snap else "SNAP_OFF",
             )
 
-            row = layout.row()
-            row.label(text="Collider Margin:")
-            row.prop(bpy.context.scene, "collider_margin_thickness", text="")
-
-            row = layout.row()
+            col.label(text="Global Margin:")
+            col.prop(bpy.context.scene, "collider_margin_thickness", text="")
 
         elif scene.tab_option == "JOINTS":
             armature_object = get_armature()

@@ -161,4 +161,33 @@ class SDFG_OT_SelectSmallParts(bpy.types.Operator):
                         obj.select_set(True)
 
         return {'FINISHED'}
+    
+class SDFG_OT_MergeVerts(bpy.types.Operator):
+    bl_idname = "object.merge_verts"
+    bl_label = "Merge overlapping vertices"
+
+    def execute(self, context):
+        # Define the merge distance in millimeters and convert to meters (Blender's default unit)
+        merge_distance_mm = 0.01
+        merge_distance_m = merge_distance_mm / 1000.0
+
+        # Get the currently active object
+        obj = bpy.context.active_object
+            
+        # Switch to Edit Mode
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Select all vertices
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Merge vertices
+        bpy.ops.mesh.remove_doubles(threshold=merge_distance_m)
+        
+        # Deselect all vertices
+        bpy.ops.mesh.select_all(action='DESELECT')
+        
+        # Switch back to Object Mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        return {'FINISHED'}
                 
