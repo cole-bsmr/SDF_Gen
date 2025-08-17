@@ -64,6 +64,7 @@ def switch_to_viewlayer(self, context):
             light.hide_viewport = True
 
     if scene.tab_option == "LINKS":
+        context.scene.move_joints = False
         if bpy.context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
         bpy.ops.object.select_all(action="DESELECT")
@@ -79,16 +80,7 @@ def switch_to_viewlayer(self, context):
         )
 
     elif scene.tab_option == "COLLIDERS":
-        """links_found, colliders_found = links_check()
-        if colliders_found == False:
-            scene.tab_option = "LINKS"
-            show_message_box(
-                message="No colliders found. Ensure there is a link with a colliders collection within it.",
-                title="Error",
-                icon="INFO",
-            )
-
-        elif colliders_found == True:"""
+        context.scene.move_joints = False
         if bpy.context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
         bpy.ops.object.select_all(action="DESELECT")
@@ -157,6 +149,7 @@ def switch_to_viewlayer(self, context):
             bpy.ops.object.mode_set(mode="POSE")
 
     elif scene.tab_option == "MATERIALS":
+        context.scene.move_joints = False
         if "Materials" not in scene.view_layers:
             scene.view_layers.new("Materials")
         bpy.context.window.view_layer = scene.view_layers["Materials"]
@@ -169,6 +162,7 @@ def switch_to_viewlayer(self, context):
         )
 
     elif scene.tab_option == "LIGHTS":
+        context.scene.move_joints = False
         if "Lights" not in scene.view_layers:
             scene.view_layers.new("Lights")
         bpy.context.window.view_layer = scene.view_layers["Lights"]
@@ -188,6 +182,7 @@ def switch_to_viewlayer(self, context):
         )
 
     elif scene.tab_option == "EXPORT":
+        context.scene.move_joints = False
         # Set viewlayer visibility
         if "Export" not in scene.view_layers:
             scene.view_layers.new("Export")

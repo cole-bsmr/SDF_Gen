@@ -113,6 +113,10 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                     row = box.row()
                     box.operator("scene.create_joint", text="Create Joint")
                     box.prop(bpy.context.scene, "move_joints", toggle=True, text="Adjust Joint Positions/Rotations")
+                    if bpy.context.scene.move_joints == True:
+                        split = box.split()
+                        split.prop(bpy.context.active_pose_bone, "pose_bone_location", text="Joint Location")
+                        split.prop(bpy.context.active_pose_bone, "rotation_euler", text="Joint Rotation")
                     box.operator("scene.delete_joint", text="Delete Joints")
                     box.operator("scene.reset_joints", text="Reset Joints")
 

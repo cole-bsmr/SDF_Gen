@@ -252,6 +252,7 @@ class SDFG_OT_ResetJoints(bpy.types.Operator):
 
     def execute(self, context):
         for bone in bpy.context.active_object.pose.bones:
+            bone.rotation_mode = 'XYZ' 
             bone.location = (0, 0, 0)
             bone.rotation_euler = (0, 0, 0)
         

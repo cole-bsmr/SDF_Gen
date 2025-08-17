@@ -2,6 +2,7 @@ import bpy
 from ..operators.create import switch_to_viewlayer
 from ..operators.general_functions import get_armature
 from mathutils import Vector
+from bpy.props import FloatVectorProperty
 
 # from ..operators.colliders import update_face_snap
 # from ..operators.colliders import update_visibility
@@ -190,6 +191,12 @@ bpy.types.Object.collider_radius = bpy.props.FloatProperty(
 def update_move_joints(self, context):
     """Updates the move_joints property."""
 
+    if bpy.context.scene.move_joints == True:
+        for joint_bone in bpy.context.object.pose.bones:
+            updated_location = joint_bone.head.copy()
+            joint_bone.pose_bone_location = updated_location
+            joint_bone.rotation_mode = 'XYZ' 
+
     def enable_bone_constraints(context, enable_bone_constraints):
         for pose_bone in context.object.pose.bones:
             for constraint in pose_bone.constraints:
@@ -321,4 +328,17 @@ bpy.types.Scene.move_joints = bpy.props.BoolProperty(
     description="Toggles the joint constraints and parent/child relationships so that joints can be moved.",
     default=False,
     update=update_move_joints,
+)
+
+def update_pose_bone_location(self, context):
+    bpy.context.active_pose_bone.location = bpy.context.active_pose_bone.bone.matrix_local.inverted() @ bpy.context.active_pose_bone.pose_bone_location
+    return
+
+bpy.types.PoseBone.pose_bone_location = FloatVectorProperty(
+    name="Pose Bone Location",
+    description="A custom XYZ vector for moving pose bones",
+    default=(0.0, 0.0, 0.0),
+    subtype='TRANSLATION',
+    unit='LENGTH',
+    update=update_pose_bone_location
 )

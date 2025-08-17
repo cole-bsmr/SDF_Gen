@@ -106,9 +106,6 @@ class SDFG_PT_JointPropertiesPanel(bpy.types.Panel):
         # box = layout.box()
         col = layout.column()
         col.label(text=(context.active_pose_bone.name + ":"))
-
-        # Joint location
-        col.prop(context.active_pose_bone, "head")
         
         # Joint size
         row = col.row()
