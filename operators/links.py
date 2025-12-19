@@ -189,7 +189,7 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
                 pass
         
         bpy.ops.object.empty_add(
-            type='PLAIN_AXES',
+            type='SINGLE_ARROW',
             align='WORLD',
             location=origin_location,
             scale=(1.0, 1.0, 1.0) 
@@ -204,6 +204,8 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
         new_empty.empty_display_size = final_empty_size
         new_empty.scale = (1.0, 1.0, 1.0)
         new_empty.parent = None 
+        new_empty.show_in_front = True
+        new_empty.object_type = "FrameObject"
 
         scene_collection = bpy.context.scene.collection
         
@@ -213,12 +215,6 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
 
         if new_empty.name not in scene_collection.objects:
             scene_collection.objects.link(new_empty)
-            
-        bpy.context.view_layer.objects.active = active_obj
-
-        bpy.context.object.show_in_front = True
-
-        bpy.context.object.object_type = "FrameObject"
 
         return {"FINISHED"}
 

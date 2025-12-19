@@ -95,7 +95,6 @@ class SDFG_PT_JointPropertiesPanel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        # Ensure there are selected objects
         if not context.active_pose_bone or context.active_pose_bone.joint_grp.joint_type == 'NotJoint':
             return False
 
@@ -154,7 +153,9 @@ class SDFG_PT_LightPropertiesPanel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        # Ensure there are selected objects
+        if not context.selected_objects:
+            return False
+        
         if context.object and context.object.type == 'LIGHT':
             return True
         else:
@@ -180,3 +181,32 @@ class SDFG_PT_LightPropertiesPanel(bpy.types.Panel):
         layout.prop(light, "spot_blend", text="Falloff") 
         layout.prop(light, "linear_attenuation", text="linear_attenuation") 
         layout.prop(light, "spot_size", text="Spot Angle")
+
+
+class SDFG_PT_FramePropertiesPanel(bpy.types.Panel):
+    bl_label = "Frame Properties"
+    bl_idname = "SDFG_PT_FramePropertiesPanel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "SDF_Gen"
+
+    @classmethod
+    def poll(cls, context):
+        if not context.selected_objects:
+            return False
+        
+        if context.object.type == 'EMPTY' and context.object.object_type == 'FrameObject':
+            return True
+        else:
+            return False
+    
+    def draw(self, context):
+        obj = context.object 
+        layout = self.layout
+        layout.label(text=obj.name)
+        
+        col = layout.column()
+        row = col.row()
+        split = row.split(factor=0.4)
+        split.label(text="Display Size:")
+        split.prop(obj, "empty_display_size", text="")
