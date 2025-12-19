@@ -44,7 +44,11 @@ class SDFG_OT_UtilitiesOperator(bpy.types.Operator):
 
         # Process meshes
         for obj in meshes:
-            print(f"Imported new object: {obj.name}")
+            # Set obj as active
+            bpy.context.view_layer.objects.active = obj
+
+            # Set cursor to obj location
+            bpy.ops.view3d.snap_cursor_to_active()
 
             # Make single user (direct data manipulation)
             if obj.data.users > 1:
@@ -54,11 +58,15 @@ class SDFG_OT_UtilitiesOperator(bpy.types.Operator):
             obj.parent = None
             obj.matrix_parent_inverse.identity()
 
-            # Apply transforms (location and scale)
+            # Apply transforms
             obj.location = (0, 0, 0)
             obj.scale = (1, 1, 1)
             obj.data.transform(obj.matrix_world)
             obj.matrix_world.identity()
+
+            # Set obj origin back to original location via cursor
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+            
 
         # Remove empty objects (batch removal)
         for obj in empties:
@@ -67,6 +75,7 @@ class SDFG_OT_UtilitiesOperator(bpy.types.Operator):
 
         #Redraw viewport
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        bpy.context.scene.cursor.location = (0.0, 0.0, 0.0)
     
     def execute(self, context):
         # Separate by Loose Parts
@@ -151,14 +160,10 @@ class SDFG_OT_SelectSmallParts(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.object.select_all(action='DESELECT')
-        for obj in bpy.context.scene.objects:
-            for collection in obj.users_collection:
-                if collection.collection_type == 'VisualCollection':
-                    volume = get_mesh_volume(obj)
-                    print (obj.name)
-                    print(volume)
-                    if volume <= context.scene.visual_volume:
-                        obj.select_set(True)
+        for obj in bpy.context.scene.objects: 
+            volume = get_mesh_volume(obj)
+            if volume <= context.scene.visual_volume:
+                obj.select_set(True)
 
         return {'FINISHED'}
     

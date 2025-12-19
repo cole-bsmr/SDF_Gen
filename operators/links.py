@@ -1,4 +1,5 @@
 import bpy
+import mathutils
 from ..operators.general_functions import get_all_collections
 from ..operators.general_functions import show_message_box
 from ..operators.general_functions import get_instances_collection
@@ -140,6 +141,85 @@ class SDFG_OT_CreateLinkCollectionsOperator(bpy.types.Operator):
         self.report(
             {"INFO"}, f"Created link, visual, and collider collections for {base_name}"
         )
+        return {"FINISHED"}
+    
+class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
+    bl_idname = "scene.create_frame"
+    bl_label = "Create Frame"
+    bl_description = "Creates frame that can be used as a reference or attachment point."
+
+    # Name for link and link subcategories
+    frame_name: bpy.props.StringProperty(
+        name="Frame Name:", description="Base name for collections", default=""
+    )  # type: ignore
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        # Set base name
+        frame_name = self.frame_name.strip()
+        if not frame_name:
+            self.report({"ERROR"}, "Name cannot be blank")
+            return {"CANCELLED"}
+
+        active_obj = bpy.context.object
+        
+        final_empty_size = 1.0
+        origin_location = (0.0, 0.0, 0.0)
+        empty_name = "Empty_frame"
+        
+        rotation_matrix = mathutils.Matrix.Identity(3)
+        
+        
+        if active_obj and active_obj.type == 'MESH':
+            origin_location = active_obj.location
+            empty_name = frame_name + "_frame"
+            
+            rotation_matrix = active_obj.matrix_world.to_3x3()
+            
+            try:
+                dimensions = active_obj.dimensions
+                valid_dimensions = [dim for dim in [dimensions.x, dimensions.y, dimensions.z] if dim > 0.0001]
+                
+                if valid_dimensions:
+                    final_empty_size = min(valid_dimensions)
+                    
+            except AttributeError:
+                pass
+        
+        bpy.ops.object.empty_add(
+            type='PLAIN_AXES',
+            align='WORLD',
+            location=origin_location,
+            scale=(1.0, 1.0, 1.0) 
+        )
+
+        new_empty = bpy.context.object
+        
+        new_empty.rotation_mode = 'QUATERNION' 
+        new_empty.rotation_quaternion = rotation_matrix.to_quaternion()
+
+        new_empty.name = empty_name
+        new_empty.empty_display_size = final_empty_size
+        new_empty.scale = (1.0, 1.0, 1.0)
+        new_empty.parent = None 
+
+        scene_collection = bpy.context.scene.collection
+        
+        for col in new_empty.users_collection:
+            if col != scene_collection:
+                col.objects.unlink(new_empty)
+
+        if new_empty.name not in scene_collection.objects:
+            scene_collection.objects.link(new_empty)
+            
+        bpy.context.view_layer.objects.active = active_obj
+
+        bpy.context.object.show_in_front = True
+
+        bpy.context.object.object_type = "FrameObject"
+
         return {"FINISHED"}
 
 class SDFG_OT_CreateLinkItems(bpy.types.Operator):

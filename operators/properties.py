@@ -124,6 +124,7 @@ bpy.types.Object.object_type = bpy.props.EnumProperty(
         ("ColliderObject", "Collider Object", "Object is a collider."),
         ("ArmatureObject", "Armature Object", "Object is an armature."),
         ("LinkInstanceObject", "Link Instance Object", "Object is a link instance."),
+        ("FrameObject", "Frame Object", "Object is a frame.")
     ],
     default="StandardObject",
 )
@@ -151,7 +152,7 @@ bpy.types.Scene.joints_expand = bpy.props.BoolProperty(default=True)
 
 bpy.types.Scene.utilities_advanced = bpy.props.BoolProperty(default=False)
 
-bpy.types.Scene.export_config = bpy.props.BoolProperty(default=True)
+bpy.types.Scene.export_config = bpy.props.BoolProperty(default=False)
 
 bpy.types.Scene.author_name = bpy.props.StringProperty(
     name="Author Name",

@@ -56,6 +56,10 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
             row = layout.row()
 
+            row.operator("scene.create_frame", text="Create Frame")
+
+            row = layout.row()
+
             row.prop(context.scene, "links_expand", 
                     icon="TRIA_DOWN" if context.scene.links_expand else "TRIA_RIGHT", 
                     icon_only=True, emboss=False)
@@ -298,3 +302,10 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                 col.prop(context.scene, "author_name", text="Author")
                 col.prop(context.scene, "author_email", text="Email")
                 col.prop(context.scene, "model_description", text="Description")
+
+            # col = layout.column()
+            # col.label(text="Resize Images")
+            # split = col.split()
+            # split.label(text="Max Image Resolution")
+            # split.prop(bpy.context.scene, "image_resolution", text="")
+            # col.operator("wm.resize_images", text="Resize Images")
