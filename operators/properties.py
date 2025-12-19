@@ -129,6 +129,21 @@ bpy.types.Object.object_type = bpy.props.EnumProperty(
     default="StandardObject",
 )
 
+def get_link_collections_for_prop(self, context):
+    items = [('None', 'None', 'No Parent')]
+    for coll in bpy.data.collections:
+        if coll.collection_type == 'LinkCollection':
+            items.append((coll.name, coll.name, f"Parent to {coll.name}"))
+    return items
+
+bpy.types.Object.frame_parent = bpy.props.EnumProperty(
+    name="Frame Parent",
+    description="The parent link of this frame.",
+    items=get_link_collections_for_prop
+)
+
+
+
 bpy.types.Object.collider_type = bpy.props.EnumProperty(
     name="Collider Type",
     description="The type of collider a collider object is",
@@ -296,12 +311,14 @@ def update_move_joints(self, context):
                         bpy.ops.constraint.childof_set_inverse(constraint="Child Of", owner='OBJECT')
 
         armature_object = get_armature()
-        bpy.context.view_layer.objects.active = armature_object
-        bpy.ops.object.mode_set(mode='POSE')
-        if previous_selection != None:
-            pose_bone = armature_object.pose.bones.get(previous_selection)
-            pose_bone.bone.select = True
-            armature_object.data.bones.active = pose_bone.bone
+        if armature_object:
+            bpy.context.view_layer.objects.active = armature_object
+            bpy.ops.object.mode_set(mode='POSE')
+            if previous_selection is not None:
+                pose_bone = armature_object.pose.bones.get(previous_selection)
+                if pose_bone:
+                    pose_bone.bone.select = True
+                    armature_object.data.bones.active = pose_bone.bone
         
     if bpy.context.scene.move_joints == True:
         # Reset poses

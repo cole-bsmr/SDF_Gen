@@ -210,3 +210,8 @@ class SDFG_PT_FramePropertiesPanel(bpy.types.Panel):
         split = row.split(factor=0.4)
         split.label(text="Display Size:")
         split.prop(obj, "empty_display_size", text="")
+
+        row = col.row()
+        split = row.split(factor=0.4)
+        split.label(text="Parent Link:")
+        split.prop(obj, "frame_parent", text="")

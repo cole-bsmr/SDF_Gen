@@ -153,11 +153,27 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
         name="Frame Name:", description="Base name for collections", default=""
     )  # type: ignore
 
+    def get_link_collections(self, context):
+        items = []
+        for coll in bpy.data.collections:
+            if coll.collection_type == 'LinkCollection':
+                items.append((coll.name, coll.name, ""))
+        if not items:
+            items.append(("None", "No Links Found", "No links available to parent to"))
+        return items
+
+    parent_link: bpy.props.EnumProperty(
+        name="Parent Link",
+        description="The parent link for this frame.",
+        items=get_link_collections
+    ) # type: ignore
+
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
         # Set base name
+        parent_link = self.parent_link
         frame_name = self.frame_name.strip()
         if not frame_name:
             self.report({"ERROR"}, "Name cannot be blank")
@@ -206,6 +222,8 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
         new_empty.parent = None 
         new_empty.show_in_front = True
         new_empty.object_type = "FrameObject"
+        if parent_link != 'None':
+            new_empty.frame_parent = parent_link
 
         scene_collection = bpy.context.scene.collection
         
@@ -215,8 +233,13 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
 
         if new_empty.name not in scene_collection.objects:
             scene_collection.objects.link(new_empty)
-
+        
         return {"FINISHED"}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "frame_name")
+        layout.prop(self, "parent_link")
 
 class SDFG_OT_CreateLinkItems(bpy.types.Operator):
     bl_idname = "scene.create_link_items"
