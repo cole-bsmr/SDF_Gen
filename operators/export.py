@@ -137,6 +137,16 @@ class SDF_OT_export_sdf(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
         print("Joints Exported")
 
+    def export_frames(self, sdf_file_path, frame):
+
+        write_text = textwrap.dedent(f"""
+            <frame name="{frame.name}" attached_to="{frame.frame_parent}" intrinsic:create_entity="true">
+                <pose>{round(frame.location.x, 6)} {round(frame.location.y, 6)} {round(frame.location.z, 6)} {round(frame.rotation_euler.x, 6)} {round(frame.rotation_euler.y, 6)} {round(frame.rotation_euler.z, 6)}</pose>
+            </frame>
+            """)
+
+        self.write_to_sdf(sdf_file_path, write_text)
+
     def export_lights(self, sdf_file_path, light):
 
         if light.data.type == 'POINT':
@@ -244,6 +254,8 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                                     export_apply=True,
                                     export_animations=False,
                                     export_morph=False,
+                                    export_image_format="JPEG",
+                                    export_jpeg_quality=100
                                 )
                             # GLTF Export
                             if bpy.context.window_manager.mesh_file_format == "GLTF":
@@ -392,7 +404,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
         f"<model>\n"
         f"    <name>{model_scene.name}</name>\n"
         f"    <version>1.0</version>\n"
-        f"    <sdf version='1.6'>model.sdf</sdf>\n"
+        f"    <sdf version='1.9'>model.sdf</sdf>\n"
         )
         if model_scene.author_name != "":
             write_text += (
@@ -453,7 +465,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
             # Create model.sdf and append model text
             write_text = (
                 f'<?xml version="1.0" encoding="UTF-8"?>\n'
-                f'<sdf version="1.6">\n'
+                f'<sdf version="1.9" xmlns:intrinsic="https://intrinsic.ai/">\n'
                 f'  <model name="{model_scene.name}">'
             )
             self.write_to_sdf(sdf_file_path, write_text)
@@ -480,7 +492,11 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                 self.export_joints(sdf_file_path, model_scene.use_relative_link_poses)
 
 
-            
+            # Export frames
+            for frame in bpy.context.scene.objects:
+                if frame.object_type == 'FrameObject':
+                    self.export_frames(sdf_file_path, frame)
+
 
             # Export scene lights
             for light in bpy.context.scene.objects:

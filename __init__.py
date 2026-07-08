@@ -1,8 +1,8 @@
 bl_info = {
     "name": "SDF Gen",
     "author": "Cole Biesemeyer",
-    "version": (1, 0, 0),
-    "blender": (4, 3, 0),
+    "version": (1, 1, 0),
+    "blender": (5, 0, 0),
     "location": "3D Viewport > Sidebar > SDF Gen",
     "description": "Creates SDF files from Blender scenes",
     "category": "View3D",

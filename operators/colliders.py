@@ -521,6 +521,10 @@ def obj_rotating_calipers_full(obj, DEBUG=False):
     bb_mesh.update()
     bb_obj = bpy.data.objects.new(bb_mesh.name, bb_mesh)
     bb_obj.matrix_world = obj.matrix_world @ mat
+
+    bb_obj.object_type = "ColliderObject"
+    bb_obj.collider_type = "BoxCollider"
+
     bpy.context.scene.collection.objects.link(bb_obj)
     bpy.context.view_layer.objects.active = bb_obj
 

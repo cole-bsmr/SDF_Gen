@@ -285,7 +285,7 @@ def set_inverse(self, context):
     bpy.ops.object.mode_set(mode='POSE')
     if previous_selection != None:
         pose_bone = armature_object.pose.bones.get(previous_selection)
-        pose_bone.bone.select = True
+        pose_bone.select = True
         armature_object.data.bones.active = pose_bone.bone
     
 class PivotToSelection(bpy.types.Operator):
