@@ -1,5 +1,6 @@
 import bpy
 import os
+import zipfile
 import xml.dom.minidom
 import shutil
 import re
@@ -208,6 +209,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                                 visual_mesh.select_set(True)
 
                             bpy.ops.object.duplicate()
+                            bpy.ops.object.convert(target='MESH')
                             bpy.context.view_layer.objects.active = (
                                 bpy.context.selected_objects[0]
                             )
@@ -438,7 +440,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
         initial_scene = bpy.context.window.scene
 
         # Ensure no objects are in edit mode
-        if len(bpy.context.view_layer.objects.selected) != 0:
+        if len(bpy.context.view_layer.objects.selected) != 0 and bpy.context.object != None:
             bpy.ops.object.mode_set("INVOKE_DEFAULT", mode="OBJECT")
 
         # Deselect all
@@ -507,6 +509,25 @@ class SDF_OT_export_sdf(bpy.types.Operator):
             self.write_to_sdf(sdf_file_path, write_text)
 
             format_xml_file(sdf_file_path)
+
+            if model_scene.zip_files:
+                zip_filename = f"{model_scene.name}.zip"
+                zip_file_path = os.path.join(folder_path, zip_filename)
+
+                # Initialize zip archive in write mode with DEFLATED compression
+                with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    # Walk the folder to grab everything generated inside it
+                    for root, dirs, files in os.walk(folder_path):
+                        for file in files:
+                            # Skip the zip file itself if it exists/is being written
+                            if file == zip_filename:
+                                continue
+                            
+                            full_file_path = os.path.join(root, file)
+                            # Determine the path of the file relative to folder_path
+                            # so that the internal ZIP structure matches the folder layout.
+                            relative_path = os.path.relpath(full_file_path, folder_path)
+                            zipf.write(full_file_path, relative_path)
 
         bpy.context.window.scene = initial_scene
         context.window_manager.export_in_progress = False

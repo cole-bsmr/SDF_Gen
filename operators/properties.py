@@ -187,7 +187,9 @@ bpy.types.Scene.model_description = bpy.props.StringProperty(
     default=""
 )
 
-bpy.types.Scene.use_relative_link_poses = bpy.props.BoolProperty(default=False)
+bpy.types.Scene.use_relative_link_poses = bpy.props.BoolProperty(default=True)
+
+bpy.types.Scene.zip_files = bpy.props.BoolProperty(default=True)
 
 def update_collider_radius(self, context):
     """Updates the collider_radius property."""

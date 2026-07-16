@@ -287,12 +287,13 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             row.prop(context.scene, "sdf_options_expand", 
                     icon="TRIA_DOWN" if context.scene.sdf_options_expand else "TRIA_RIGHT", 
                     icon_only=True, emboss=False)
-            row.label(text="SDF Options")
+            row.label(text="Export Options")
 
             if context.scene.sdf_options_expand:
                 box = layout.box()
                 col = box.column()
                 col.prop(context.scene, "use_relative_link_poses", text="Relative link poses")
+                col.prop(context.scene, "zip_files", text="Zip files")
 
             col = layout.column()
             col.prop(context.scene, "export_config", text="Export Config File")

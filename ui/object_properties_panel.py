@@ -192,6 +192,9 @@ class SDFG_PT_FramePropertiesPanel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
+        if not context.object:
+            return False
+        
         if not context.selected_objects:
             return False
         
