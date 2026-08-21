@@ -63,8 +63,26 @@ def switch_to_viewlayer(self, context):
         if light.type == 'LIGHT':
             light.hide_viewport = True
 
+    if scene.tab_option == "UTILITIES":
+        context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = None
+        if "Links" not in scene.view_layers:
+            scene.view_layers.new("Links")
+        bpy.context.window.view_layer = scene.view_layers["Links"]
+        
+
+        # Set viewlayer visibility
+        viewlayer_visibility(
+            view_layer_name="Links", hide_instances=True, hide_colliders=True
+        )
+
     if scene.tab_option == "LINKS":
         context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
         if bpy.context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
         bpy.ops.object.select_all(action="DESELECT")
@@ -81,6 +99,7 @@ def switch_to_viewlayer(self, context):
 
     elif scene.tab_option == "COLLIDERS":
         context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
         if bpy.context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
         bpy.ops.object.select_all(action="DESELECT")
@@ -106,6 +125,7 @@ def switch_to_viewlayer(self, context):
         ].hide_viewport = True"""
 
     elif scene.tab_option == "JOINTS":
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
         link_joint_shapes(self, context)
         links_found, colliders_found = links_check()
 
@@ -148,8 +168,26 @@ def switch_to_viewlayer(self, context):
 
             bpy.ops.object.mode_set(mode="POSE")
 
+    if scene.tab_option == "SENSORS":
+        context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = None
+        if "Links" not in scene.view_layers:
+            scene.view_layers.new("Links")
+        bpy.context.window.view_layer = scene.view_layers["Links"]
+        
+
+        # Set viewlayer visibility
+        viewlayer_visibility(
+            view_layer_name="Links", hide_instances=True, hide_colliders=True
+        )
+
     elif scene.tab_option == "MATERIALS":
         context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
         if "Materials" not in scene.view_layers:
             scene.view_layers.new("Materials")
         bpy.context.window.view_layer = scene.view_layers["Materials"]
@@ -163,6 +201,7 @@ def switch_to_viewlayer(self, context):
 
     elif scene.tab_option == "LIGHTS":
         context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
         if "Lights" not in scene.view_layers:
             scene.view_layers.new("Lights")
         bpy.context.window.view_layer = scene.view_layers["Lights"]
@@ -181,8 +220,46 @@ def switch_to_viewlayer(self, context):
                 hide_colliders=True
         )
 
+    elif scene.tab_option == "RENDER":
+        context.scene.move_joints = False
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = None
+        if "Links" not in scene.view_layers:
+            scene.view_layers.new("Links")
+        bpy.context.window.view_layer = scene.view_layers["Links"]
+        
+
+        # Set viewlayer visibility
+        viewlayer_visibility(
+            view_layer_name="Links", hide_instances=True, hide_colliders=True
+        )
+
+        # 1. Find the thumbnail camera and set it as the scene's active camera
+        thumb_cam = next(
+            (
+                obj
+                for obj in bpy.data.objects
+                if obj.type == "CAMERA" and getattr(obj.data, "is_thumbcam", False)
+            ),
+            None,
+        )
+
+        if thumb_cam:
+            bpy.context.scene.camera = thumb_cam
+
+            # 2. Switch active 3D Viewport to Camera View and enable "Lock Camera to View"
+            for area in bpy.context.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            space.region_3d.view_perspective = "CAMERA"
+                            space.lock_camera = True
+
     elif scene.tab_option == "EXPORT":
         context.scene.move_joints = False
+        bpy.context.space_data.region_3d.view_perspective = 'PERSP'
         # Set viewlayer visibility
         if "Export" not in scene.view_layers:
             scene.view_layers.new("Export")

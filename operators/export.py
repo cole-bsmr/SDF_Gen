@@ -256,8 +256,8 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                                     export_apply=True,
                                     export_animations=False,
                                     export_morph=False,
-                                    export_image_format="JPEG",
-                                    export_jpeg_quality=100
+                                    export_image_format="AUTO",
+                                    export_image_quality=75
                                 )
                             # GLTF Export
                             if bpy.context.window_manager.mesh_file_format == "GLTF":
@@ -428,6 +428,10 @@ class SDF_OT_export_sdf(bpy.types.Operator):
         )
         self.write_to_sdf(config_file_path, write_text)
 
+    def export_thumbnail(self, sdf_file_path):
+        with open(sdf_file_path, "a") as file:
+            file.write(write_text)
+
     def execute(self, context):
         # Flag to ensure update function are disabled when accessing properties
         context.window_manager.export_in_progress = True
@@ -528,6 +532,65 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                             # so that the internal ZIP structure matches the folder layout.
                             relative_path = os.path.relpath(full_file_path, folder_path)
                             zipf.write(full_file_path, relative_path)
+
+        thumb_cam = next(
+            (
+                obj
+                for obj in model_scene.objects
+                if obj.type == "CAMERA" and getattr(obj.data, "is_thumbcam", False)
+            ),
+            None,
+        )
+
+        if thumb_cam:
+            # 1. Save original view layer
+            orig_view_layer = bpy.context.window.view_layer
+
+            # Switch to "Links" view layer if present
+            if "Links" in model_scene.view_layers:
+                bpy.context.window.view_layer = model_scene.view_layers["Links"]
+
+            try:
+                model_scene.camera = thumb_cam
+                model_scene.render.filepath = os.path.join(folder_path, "thumbnail.jpg")
+                model_scene.render.image_settings.file_format = "JPEG"
+
+                # 2. Find a 3D Viewport to set up Material Preview
+                view3d_area = next(
+                    (area for area in bpy.context.screen.areas if area.type == "VIEW_3D"),
+                    None,
+                )
+
+                if view3d_area:
+                    space = view3d_area.spaces.active
+
+                    # Save original viewport state
+                    orig_perspective = space.region_3d.view_perspective
+                    orig_shading = space.shading.type
+                    orig_overlays = space.overlay.show_overlays
+
+                    # Set viewport to Camera view, Material Preview, and hide UI overlays
+                    space.region_3d.view_perspective = "CAMERA"
+                    space.shading.type = "MATERIAL"
+                    space.overlay.show_overlays = False
+
+                    # Capture viewport screenshot using Material Preview context
+                    with bpy.context.temp_override(area=view3d_area):
+                        bpy.ops.render.opengl(write_still=True, view_context=True)
+
+                    # Restore original viewport state
+                    space.region_3d.view_perspective = orig_perspective
+                    space.shading.type = orig_shading
+                    space.overlay.show_overlays = orig_overlays
+                else:
+                    # Fallback offscreen capture if no 3D Viewport area is active
+                    bpy.ops.render.opengl(write_still=True, view_context=False)
+
+            finally:
+                # 3. Always restore original view layer
+                bpy.context.window.view_layer = orig_view_layer
+        else:
+            print("No thumbnail camera found. Skipping thumbnail export.")
 
         bpy.context.window.scene = initial_scene
         context.window_manager.export_in_progress = False

@@ -2,6 +2,7 @@ import bpy
 import addon_utils
 from ..operators.joints import SDFG_OT_CreateJoint
 from ..operators.joints import SDFG_OT_ResetJoints
+from ..operators.render import OBJECT_OT_capture_thumbnail
 from ..operators.general_functions import show_message_box
 from ..operators.general_functions import links_check
 from ..operators.general_functions import get_armature
@@ -272,8 +273,7 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
         elif scene.tab_option == "RENDER":
             col = box.column()
-            col.label(text="Render/Thumbnail Tab")
-            col.label(text="Under Construction", icon="WARNING_LARGE")
+            col.operator("object.capture_thumbnail", text="Create Thumbnail Camera")
 
         elif scene.tab_option == "EXPORT":
             col = box.column()

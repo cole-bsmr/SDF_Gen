@@ -159,6 +159,8 @@ bpy.types.Object.collider_type = bpy.props.EnumProperty(
     default="NotCollider",
 )
 
+bpy.types.Camera.is_thumbcam = bpy.props.BoolProperty(default=False)
+
 bpy.types.Scene.links_expand = bpy.props.BoolProperty(default=True)
 
 bpy.types.Scene.sdf_options_expand = bpy.props.BoolProperty(default=False)
