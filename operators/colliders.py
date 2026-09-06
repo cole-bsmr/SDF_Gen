@@ -413,10 +413,11 @@ def mesh_collider(visual_obj, mesh_resolution, mesh_inflate):
         print(bpy.context.active_object.collider_type)
 
     # Link the duplicate to the Scene Collection
-    bpy.context.scene.collection.objects.link(bpy.context.active_object)
+    if bpy.context.active_object.name not in bpy.context.scene.collection.objects:
+        bpy.context.scene.collection.objects.link(bpy.context.active_object)
 
     # Remove the duplicate from any other collections
-    for col in bpy.context.active_object.users_collection:
+    for col in list(bpy.context.active_object.users_collection):
         if col != bpy.context.scene.collection:
             col.objects.unlink(bpy.context.active_object)
 
@@ -508,7 +509,8 @@ def obj_rotating_calipers_full(obj, DEBUG=False):
         bm.to_mesh(chull_mesh)
         chull_obj = bpy.data.objects.new(chull_mesh.name, chull_mesh)
         chull_obj.matrix_world = obj.matrix_world
-        bpy.context.scene.collection.objects.link(chull_obj)
+        if chull_obj.name not in bpy.context.scene.collection.objects:
+            bpy.context.scene.collection.objects.link(chull_obj)
 
     # Create basis vectors for each face
     bases = []
@@ -562,7 +564,8 @@ def obj_rotating_calipers_full(obj, DEBUG=False):
     bb_obj.object_type = "ColliderObject"
     bb_obj.collider_type = "BoxCollider"
 
-    bpy.context.scene.collection.objects.link(bb_obj)
+    if bb_obj.name not in bpy.context.scene.collection.objects:
+        bpy.context.scene.collection.objects.link(bb_obj)
     bpy.context.view_layer.objects.active = bb_obj
 
 
@@ -609,7 +612,13 @@ def get_selected_mesh_objects():
         if obj in seen:
             return
         seen.add(obj)
-        if obj.type == "MESH" and obj not in meshes:
+        # Filter out existing colliders
+        is_collider = (
+            getattr(obj, "object_type", "") == "ColliderObject"
+            or getattr(obj, "collider_type", "NotCollider") != "NotCollider"
+            or "_collider" in obj.name.lower()
+        )
+        if obj.type == "MESH" and not is_collider and obj not in meshes:
             meshes.append(obj)
         for child in obj.children:
             traverse(child)
