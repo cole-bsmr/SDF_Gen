@@ -360,3 +360,58 @@ bpy.types.PoseBone.pose_bone_location = FloatVectorProperty(
     unit='LENGTH',
     update=update_pose_bone_location
 )
+
+# Alpha Wrap Collider Properties
+bpy.types.Scene.alpha_wrap_expand = bpy.props.BoolProperty(
+    name="Alpha Wrap Expand",
+    description="Expand or collapse the Alpha Wrap settings section",
+    default=True,
+)
+
+bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
+    name="Alpha",
+    description="Alpha parameter: size of probe ball / feature resolution",
+    default=2.0,
+    min=0.0001,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
+    name="Offset",
+    description="Offset parameter: distance added to surface",
+    default=0.5,
+    min=0.0,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
+    name="Mode",
+    description="Coordinate units for alpha and offset",
+    items=[
+        ("PERCENTAGE", "Percentage", "Percentage of bounding box diagonal"),
+        ("ABSOLUTE", "Absolute", "Absolute coordinate units (meters)"),
+    ],
+    default="PERCENTAGE",
+)
+
+bpy.types.Scene.alpha_wrap_decimate_angle = bpy.props.FloatProperty(
+    name="Planar Angle",
+    description="Planar dihedral angle threshold in degrees for planar decimation (0 to disable)",
+    default=5.0,
+    min=0.0,
+    max=180.0,
+    precision=2,
+)
+
+bpy.types.Scene.alpha_wrap_decimate_faces = bpy.props.IntProperty(
+    name="Target Faces",
+    description="Target number of faces to simplify via Quadric Edge Collapse (0 to disable)",
+    default=0,
+    min=0,
+)
+
+bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
+    name="Per Object",
+    description="Toggle for multiple selection behavior (create collider per object or join)",
+    default=True,
+)

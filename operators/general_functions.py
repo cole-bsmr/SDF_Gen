@@ -22,9 +22,13 @@ def get_all_collections():
 def show_message_box(message="", title="Message Box", icon="INFO"):
 
     def draw(self, context):
-        self.layout.label(text=message)
+        for line in message.split("\n"):
+            self.layout.label(text=line)
 
-    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+    if not bpy.app.background:
+        bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+    else:
+        print(f"[{title}] {message}")
 
 def links_check():
     all_collections = get_all_collections()

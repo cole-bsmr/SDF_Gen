@@ -107,6 +107,29 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             col.label(text="Global Margin:")
             col.prop(bpy.context.scene, "collider_margin_thickness", text="")
 
+            # Alpha Wrap section
+            wrap_box = layout.box()
+            wrap_header = wrap_box.row()
+            wrap_header.prop(
+                scene,
+                "alpha_wrap_expand",
+                icon="TRIA_DOWN" if scene.alpha_wrap_expand else "TRIA_RIGHT",
+                icon_only=True,
+                emboss=False,
+            )
+            wrap_header.label(text="Alpha Wrap")
+
+            if scene.alpha_wrap_expand:
+                wrap_col = wrap_box.column()
+                wrap_col.prop(scene, "alpha_wrap_alpha", text="Alpha")
+                wrap_col.prop(scene, "alpha_wrap_offset", text="Offset")
+                wrap_col.prop(scene, "alpha_wrap_mode", text="Mode")
+                wrap_col.prop(scene, "alpha_wrap_decimate_angle", text="Planar Angle")
+                wrap_col.prop(scene, "alpha_wrap_decimate_faces", text="Decimate Faces")
+                wrap_col.prop(scene, "alpha_wrap_per_obj", text="Per Object")
+                wrap_col.operator("mesh.create_alpha_wrap_collider", text="Create")
+
+
         elif scene.tab_option == "JOINTS":
             armature_object = get_armature()
             if armature_object == None:

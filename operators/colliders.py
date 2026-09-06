@@ -5,8 +5,13 @@ import bmesh
 from timeit import default_timer as timer
 from mathutils import Matrix
 import os
+import sys
+import tempfile
 import mathutils
 from ..operators.general_functions import show_message_box
+from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available
+
+
 
 
 
@@ -97,22 +102,35 @@ class MESH_OT_add_collider(bpy.types.Operator):
         if not validate_selection():
             return {"CANCELLED"}
 
+        visual_mesh_objs = get_selected_mesh_objects()
+        if not visual_mesh_objs:
+            return {"CANCELLED"}
+
         bpy.context.view_layer.active_layer_collection = (
             bpy.context.view_layer.layer_collection
         )
 
         joined_visual = None
+        ref_obj = visual_mesh_objs[0]
 
         # Join objects if per object is turned off
-        if self.per_obj == False:
-            bpy.ops.object.duplicate()
+        if self.per_obj == False and len(visual_mesh_objs) > 1:
+            bpy.ops.object.select_all(action="DESELECT")
+            for obj in visual_mesh_objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = visual_mesh_objs[0]
+            bpy.ops.object.duplicate(linked=False)
             bpy.ops.object.join()
             bpy.context.active_object.select_set(True)
             bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
             joined_visual = bpy.context.active_object
+            target_objs = [joined_visual]
+        else:
+            target_objs = visual_mesh_objs
 
-        visual_obj_col = bpy.context.selected_objects[:]
-        for visual_obj in visual_obj_col:
+        created_colliders = []
+        for visual_obj in target_objs:
+            bpy.ops.object.select_all(action="DESELECT")
             visual_obj.select_set(True)
             bpy.context.view_layer.objects.active = visual_obj
             
@@ -134,41 +152,60 @@ class MESH_OT_add_collider(bpy.types.Operator):
             collider_obj = bpy.context.active_object
 
             # Move collider to approprate collection
-            move_to_collection(visual_obj, collider_obj)
+            move_to_collection(ref_obj if visual_obj == joined_visual else visual_obj, collider_obj)
 
             # Set the collider material and visibility settings
             SetColliderMaterial()
 
             # Rename collider
-            bpy.context.active_object.name = (
-                (visual_obj.name + "_collider" + "_" + self.shape_type)
+            collider_base_name = ref_obj.name if visual_obj == joined_visual else visual_obj.name
+            collider_obj.name = (
+                (collider_base_name + "_collider" + "_" + self.shape_type)
                 .lower()
                 .replace(".", "")
             )
             # Add the modifier that allows adjustment of the collider safety margin
             add_margin_modifier()
+            created_colliders.append(collider_obj)
         
         # Remove duplicate object
         if joined_visual:
-            bpy.data.objects.remove(joined_visual)
+            bpy.data.objects.remove(joined_visual, do_unlink=True)
+
+        # Select created colliders
+        bpy.ops.object.select_all(action="DESELECT")
+        for c in created_colliders:
+            c.select_set(True)
+        if created_colliders:
+            bpy.context.view_layer.objects.active = created_colliders[0]
 
         return {"FINISHED"}
 
 
 def move_to_collection(visual_obj, collider_obj):
     """Move the collider object to the appropriate '_colliders' collection."""
-    visual_exists = False
-    for parent_collection in visual_obj.users_collection:
-        if "_visual" in parent_collection.name:
-            visual_exists = True
-            collider_collection_name = parent_collection.name.replace(
-                "_visual", "_colliders"
-            )
-            if not bpy.data.collections.get(collider_collection_name):
-                create_collection = bpy.data.collections.new(collider_collection_name)
-                bpy.context.scene.collection.children.link(create_collection)
-            bpy.data.collections[collider_collection_name].objects.link(collider_obj)
+    visual_col = None
+    curr = visual_obj
+    while curr:
+        for col in curr.users_collection:
+            if "_visual" in col.name:
+                visual_col = col
+                break
+        if visual_col:
+            break
+        curr = curr.parent
+
+    if visual_col:
+        collider_collection_name = visual_col.name.replace("_visual", "_colliders")
+        if not bpy.data.collections.get(collider_collection_name):
+            create_collection = bpy.data.collections.new(collider_collection_name)
+            bpy.context.scene.collection.children.link(create_collection)
+        target_col = bpy.data.collections[collider_collection_name]
+        if collider_obj.name not in target_col.objects:
+            target_col.objects.link(collider_obj)
+        if collider_obj.name in bpy.context.scene.collection.objects:
             bpy.context.scene.collection.objects.unlink(collider_obj)
+
 
 
 def SetColliderMaterial():
@@ -560,19 +597,49 @@ def ChangeOrientation(visual_obj, collider_obj, axis_set):
         )  # Rotate for correct axis alignment
 
 
-def validate_selection():
-    """Validates the current selection."""
+def get_selected_mesh_objects():
+    """Traverses selected objects and their children recursively to collect all mesh objects."""
     if not bpy.context.selected_objects:
-        show_message_box(message="No object selected.", title="Error", icon='INFO')
+        return []
+
+    meshes = []
+    seen = set()
+
+    def traverse(obj):
+        if obj in seen:
+            return
+        seen.add(obj)
+        if obj.type == "MESH" and obj not in meshes:
+            meshes.append(obj)
+        for child in obj.children:
+            traverse(child)
+
+    for obj in bpy.context.selected_objects:
+        traverse(obj)
+
+    return meshes
+
+
+def validate_selection():
+    """Validates that there is at least one mesh in the current selection or its children."""
+    if not bpy.context.selected_objects:
+        show_message_box(message="No object selected.", title="Error", icon="INFO")
         return False
 
-    if bpy.context.active_object is None or bpy.context.active_object.type != "MESH":
-        show_message_box(message="Selected object is not a mesh.", title="Error", icon='INFO')
+    mesh_objs = get_selected_mesh_objects()
+    if not mesh_objs:
+        show_message_box(
+            message="Selected object is not a mesh and has no mesh children.",
+            title="Error",
+            icon="INFO",
+        )
         return False
 
-    bpy.ops.object.mode_set(mode="OBJECT")
+    if bpy.context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
 
     return True
+
 
 def get_bb_center():
     obj = bpy.context.active_object  # Replace with your object if not using the active one
@@ -586,3 +653,206 @@ def get_bb_center():
     bb_center_world = obj.matrix_world @ bb_center_local
 
     return bb_center_world
+
+
+def alpha_wrap_collider(
+    visual_obj,
+    alpha,
+    offset,
+    is_percentage,
+    decimate_angle,
+    decimate_faces,
+):
+    """Creates a new alpha-wrapped collision mesh object from visual_obj.
+    
+    The original visual_obj mesh is kept completely untouched.
+    """
+    temp_in = tempfile.mktemp(suffix=".stl")
+    temp_out = tempfile.mktemp(suffix=".stl")
+
+    try:
+        # Export visual_obj to temp_in without modifying it
+        bpy.ops.object.select_all(action="DESELECT")
+        visual_obj.select_set(True)
+        bpy.context.view_layer.objects.active = visual_obj
+
+        if hasattr(bpy.ops.wm, "stl_export"):
+            bpy.ops.wm.stl_export(filepath=temp_in, export_selected_objects=True, apply_modifiers=True)
+        elif hasattr(bpy.ops.export_mesh, "stl"):
+            bpy.ops.export_mesh.stl(filepath=temp_in, use_selection=True, use_mesh_modifiers=True)
+        else:
+            raise RuntimeError("No STL export operator available in Blender.")
+
+        # Compute alpha wrap using the plugin's internal alpha_wrap module
+        alpha_wrap_mesh(
+            input_path=temp_in,
+            output_path=temp_out,
+            alpha=alpha,
+            offset=offset,
+            is_percentage=is_percentage,
+            decimate_angle=decimate_angle,
+            decimate_faces=decimate_faces,
+        )
+
+        if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
+            raise RuntimeError("Alpha wrap produced an empty or missing output mesh.")
+
+        # Import wrapped STL as a brand-new mesh object
+        bpy.ops.object.select_all(action="DESELECT")
+        if hasattr(bpy.ops.wm, "stl_import"):
+            bpy.ops.wm.stl_import(filepath=temp_out)
+        elif hasattr(bpy.ops.import_mesh, "stl"):
+            bpy.ops.import_mesh.stl(filepath=temp_out)
+        else:
+            raise RuntimeError("No STL import operator available in Blender.")
+
+        collider_obj = bpy.context.active_object
+        if not collider_obj:
+            raise RuntimeError("Failed to import alpha wrap collider mesh into Blender.")
+
+        # Center origin on bounds
+        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+
+        # Set collider types for SDF_Gen export
+        collider_obj.object_type = "ColliderObject"
+        collider_obj.collider_type = "MeshCollider"
+
+        # Ensure object is linked to scene collection before moving
+        if collider_obj.name not in bpy.context.scene.collection.objects:
+            bpy.context.scene.collection.objects.link(collider_obj)
+        for col in list(collider_obj.users_collection):
+            if col != bpy.context.scene.collection:
+                col.objects.unlink(collider_obj)
+
+        # Move to the appropriate _colliders collection
+        move_to_collection(visual_obj, collider_obj)
+
+        # Set collider material and wireframe display
+        SetColliderMaterial()
+
+        # Rename collider
+        collider_obj.name = (
+            (visual_obj.name + "_collider_alphawrap")
+            .lower()
+            .replace(".", "")
+        )
+
+        # Add the margin modifier
+        add_margin_modifier()
+
+        return collider_obj
+
+    finally:
+        if os.path.exists(temp_in):
+            os.remove(temp_in)
+        if os.path.exists(temp_out):
+            os.remove(temp_out)
+
+
+class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
+    bl_idname = "mesh.create_alpha_wrap_collider"
+    bl_label = "Create Alpha Wrap Collider"
+    bl_description = "Creates a new watertight alpha-wrapped collision mesh from selected visual objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if not is_pymeshlab_available():
+            msg = (
+                "PyMeshLab is not installed in Blender's Python environment.\n"
+                "To enable Alpha Wrap, install PyMeshLab in Blender via:\n"
+                f"{sys.executable} -m pip install pymeshlab"
+            )
+            show_message_box(message=msg, title="PyMeshLab Missing", icon="ERROR")
+            self.report(
+                {"WARNING"},
+                "PyMeshLab is not installed in Blender's Python environment."
+            )
+            return {"CANCELLED"}
+
+        if not validate_selection():
+            return {"CANCELLED"}
+
+        bpy.context.view_layer.active_layer_collection = (
+            bpy.context.view_layer.layer_collection
+        )
+
+        scene = context.scene
+        alpha = scene.alpha_wrap_alpha
+        offset = scene.alpha_wrap_offset
+        is_percentage = (scene.alpha_wrap_mode == "PERCENTAGE")
+        decimate_angle = scene.alpha_wrap_decimate_angle if scene.alpha_wrap_decimate_angle > 0 else None
+        decimate_faces = scene.alpha_wrap_decimate_faces if scene.alpha_wrap_decimate_faces > 0 else None
+        per_obj = scene.alpha_wrap_per_obj
+
+        selected_objs = get_selected_mesh_objects()
+        if not selected_objs:
+            show_message_box(
+                message="Selected object is not a mesh and has no mesh children.",
+                title="Error",
+                icon="INFO",
+            )
+            return {"CANCELLED"}
+
+        created_colliders = []
+
+        try:
+            if not per_obj and len(selected_objs) > 1:
+                # Combine duplicates for wrapping into a single collider
+                bpy.ops.object.select_all(action="DESELECT")
+                for obj in selected_objs:
+                    obj.select_set(True)
+                bpy.context.view_layer.objects.active = selected_objs[0]
+                bpy.ops.object.duplicate(linked=False)
+                bpy.ops.object.join()
+                temp_joined = bpy.context.active_object
+                try:
+                    collider = alpha_wrap_collider(
+                        temp_joined,
+                        alpha,
+                        offset,
+                        is_percentage,
+                        decimate_angle,
+                        decimate_faces,
+                    )
+                    created_colliders.append(collider)
+                    move_to_collection(selected_objs[0], collider)
+                    collider.name = (
+                        (selected_objs[0].name + "_collider_alphawrap")
+                        .lower()
+                        .replace(".", "")
+                    )
+                finally:
+                    bpy.data.objects.remove(temp_joined, do_unlink=True)
+            else:
+                for visual_obj in selected_objs:
+                    collider = alpha_wrap_collider(
+                        visual_obj,
+                        alpha,
+                        offset,
+                        is_percentage,
+                        decimate_angle,
+                        decimate_faces,
+                    )
+                    created_colliders.append(collider)
+
+        except Exception as e:
+            show_message_box(
+                message=f"Alpha Wrap failed: {str(e)}",
+                title="Error",
+                icon="ERROR",
+            )
+            return {"CANCELLED"}
+
+        # Select the newly created colliders
+        bpy.ops.object.select_all(action="DESELECT")
+        for c in created_colliders:
+            c.select_set(True)
+        if created_colliders:
+            bpy.context.view_layer.objects.active = created_colliders[0]
+
+        self.report(
+            {"INFO"},
+            f"Created {len(created_colliders)} Alpha Wrap collider(s)."
+        )
+        return {"FINISHED"}
+
