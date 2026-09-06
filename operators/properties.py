@@ -414,4 +414,17 @@ bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
     name="Per Object",
     description="Toggle for multiple selection behavior (create collider per object or join)",
     default=True,
+)
+
+# Alpha Wrap Async State
+bpy.types.WindowManager.alpha_wrap_in_progress = bpy.props.BoolProperty(
+    name="Alpha Wrap In Progress",
+    description="Indicates if an alpha wrap operation is currently running in the background",
+    default=False,
+)
+
+bpy.types.WindowManager.alpha_wrap_status = bpy.props.StringProperty(
+    name="Alpha Wrap Status",
+    description="Current status of the background alpha wrap operation",
+    default="",
 )

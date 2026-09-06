@@ -121,13 +121,31 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
             if scene.alpha_wrap_expand:
                 wrap_col = wrap_box.column()
-                wrap_col.prop(scene, "alpha_wrap_alpha", text="Alpha")
-                wrap_col.prop(scene, "alpha_wrap_offset", text="Offset")
-                wrap_col.prop(scene, "alpha_wrap_mode", text="Mode")
-                wrap_col.prop(scene, "alpha_wrap_decimate_angle", text="Planar Angle")
-                wrap_col.prop(scene, "alpha_wrap_decimate_faces", text="Decimate Faces")
-                wrap_col.prop(scene, "alpha_wrap_per_obj", text="Per Object")
-                wrap_col.operator("mesh.create_alpha_wrap_collider", text="Create")
+                in_progress = context.window_manager.alpha_wrap_in_progress
+
+                settings_col = wrap_col.column()
+                settings_col.enabled = not in_progress
+                settings_col.prop(scene, "alpha_wrap_alpha", text="Alpha")
+                settings_col.prop(scene, "alpha_wrap_offset", text="Offset")
+                settings_col.prop(scene, "alpha_wrap_mode", text="Mode")
+                settings_col.prop(scene, "alpha_wrap_decimate_angle", text="Planar Angle")
+                settings_col.prop(scene, "alpha_wrap_decimate_faces", text="Decimate Faces")
+                settings_col.prop(scene, "alpha_wrap_per_obj", text="Per Object")
+
+                btn_row = wrap_col.row()
+                if in_progress:
+                    btn_row.enabled = False
+                    status_text = (
+                        context.window_manager.alpha_wrap_status
+                        or "Creating Alpha Wrap..."
+                    )
+                    btn_row.operator(
+                        "mesh.create_alpha_wrap_collider",
+                        text=status_text,
+                        icon="TIME",
+                    )
+                else:
+                    btn_row.operator("mesh.create_alpha_wrap_collider", text="Create")
 
 
         elif scene.tab_option == "JOINTS":

@@ -7,6 +7,7 @@ from mathutils import Matrix
 import os
 import sys
 import tempfile
+import threading
 import mathutils
 from ..operators.general_functions import show_message_box
 from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available
@@ -664,6 +665,198 @@ def get_bb_center():
     return bb_center_world
 
 
+def export_object_to_stl(obj, filepath):
+    """Exports a single object to an STL file on the main thread."""
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+    if hasattr(bpy.ops.wm, "stl_export"):
+        bpy.ops.wm.stl_export(
+            filepath=filepath,
+            export_selected_objects=True,
+            apply_modifiers=True,
+        )
+    elif hasattr(bpy.ops.export_mesh, "stl"):
+        bpy.ops.export_mesh.stl(
+            filepath=filepath,
+            use_selection=True,
+            use_mesh_modifiers=True,
+        )
+    else:
+        raise RuntimeError("No STL export operator available in Blender.")
+
+
+def import_stl_object(filepath):
+    """Imports an STL file as a new Blender object and returns it."""
+    bpy.ops.object.select_all(action="DESELECT")
+    if hasattr(bpy.ops.wm, "stl_import"):
+        bpy.ops.wm.stl_import(filepath=filepath)
+    elif hasattr(bpy.ops.import_mesh, "stl"):
+        bpy.ops.import_mesh.stl(filepath=filepath)
+    else:
+        raise RuntimeError("No STL import operator available in Blender.")
+
+    imported_obj = bpy.context.active_object
+    if not imported_obj:
+        raise RuntimeError("Failed to import STL mesh into Blender.")
+    return imported_obj
+
+
+def setup_alpha_wrap_collider(collider_obj, visual_obj, target_name):
+    """Configures and positions an imported STL object as an Alpha Wrap collider."""
+    bpy.context.view_layer.objects.active = collider_obj
+    bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+
+    collider_obj.object_type = "ColliderObject"
+    collider_obj.collider_type = "MeshCollider"
+
+    # Ensure object is linked to scene collection before moving
+    if collider_obj.name not in bpy.context.scene.collection.objects:
+        bpy.context.scene.collection.objects.link(collider_obj)
+    for col in list(collider_obj.users_collection):
+        if col != bpy.context.scene.collection:
+            col.objects.unlink(collider_obj)
+
+    # Move to the appropriate _colliders collection
+    if visual_obj:
+        move_to_collection(visual_obj, collider_obj)
+
+    # Set collider material and wireframe display
+    SetColliderMaterial()
+
+    # Set final collider name
+    collider_obj.name = target_name
+
+    # Add the margin modifier
+    add_margin_modifier()
+
+
+def tag_redraw_view3d():
+    """Redraws 3D Viewport areas to refresh the SDF_Gen sidebar panel."""
+    wm = bpy.context.window_manager
+    if not wm:
+        return
+    for window in wm.windows:
+        if window.screen:
+            for area in window.screen.areas:
+                if area.type == "VIEW_3D":
+                    area.tag_redraw()
+
+
+def _cleanup_task_files(tasks):
+    """Deletes temporary STL files associated with alpha wrap tasks."""
+    for task in tasks:
+        for path in (task.get("temp_in"), task.get("temp_out")):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+
+def _alpha_wrap_worker(tasks, params, state):
+    """Background worker function executing heavy alpha-wrap processing."""
+    try:
+        total = len(tasks)
+        for i, task in enumerate(tasks):
+            state["current"] = i
+            state["status"] = (
+                f"Wrapping ({i + 1}/{total})..." if total > 1 else "Wrapping..."
+            )
+            alpha_wrap_mesh(
+                input_path=task["temp_in"],
+                output_path=task["temp_out"],
+                alpha=params["alpha"],
+                offset=params["offset"],
+                is_percentage=params["is_percentage"],
+                decimate_angle=params["decimate_angle"],
+                decimate_faces=params["decimate_faces"],
+            )
+            state["completed"] = i + 1
+    except Exception as e:
+        state["error"] = str(e)
+    finally:
+        state["is_done"] = True
+
+
+def _create_wrap_timer_callback(tasks, state):
+    """Creates a timer callback function to monitor and finalize alpha wrap on the main thread."""
+    last_status = [None]
+
+    def timer_callback():
+        wm = bpy.context.window_manager
+
+        # While worker thread is still computing in background
+        if not state.get("is_done", False):
+            current_status = state.get("status", "Wrapping...")
+            if wm and current_status != last_status[0]:
+                wm.alpha_wrap_status = current_status
+                last_status[0] = current_status
+                tag_redraw_view3d()
+            return 0.1
+
+        # Background computation finished - running on Main Thread
+        if wm:
+            wm.alpha_wrap_in_progress = False
+            wm.alpha_wrap_status = ""
+
+        err = state.get("error")
+        if err:
+            _cleanup_task_files(tasks)
+            show_message_box(
+                message=f"Alpha Wrap failed: {err}",
+                title="Error",
+                icon="ERROR",
+            )
+            tag_redraw_view3d()
+            return None
+
+        created_colliders = []
+        try:
+            for task in tasks:
+                temp_out = task["temp_out"]
+                visual_obj = bpy.data.objects.get(task["visual_obj_name"])
+
+                if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
+                    continue
+
+                collider_obj = import_stl_object(temp_out)
+                setup_alpha_wrap_collider(
+                    collider_obj=collider_obj,
+                    visual_obj=visual_obj,
+                    target_name=task["target_name"],
+                )
+                created_colliders.append(collider_obj)
+
+            # Select newly created colliders
+            bpy.ops.object.select_all(action="DESELECT")
+            for c in created_colliders:
+                c.select_set(True)
+            if created_colliders:
+                bpy.context.view_layer.objects.active = created_colliders[0]
+
+            if hasattr(bpy.ops.ed, "undo_push"):
+                try:
+                    bpy.ops.ed.undo_push(message="Create Alpha Wrap Collider")
+                except Exception:
+                    pass
+
+        except Exception as e:
+            show_message_box(
+                message=f"Failed finalizing Alpha Wrap colliders: {str(e)}",
+                title="Error",
+                icon="ERROR",
+            )
+        finally:
+            _cleanup_task_files(tasks)
+
+        tag_redraw_view3d()
+        return None
+
+    return timer_callback
+
+
 def alpha_wrap_collider(
     visual_obj,
     alpha,
@@ -672,27 +865,12 @@ def alpha_wrap_collider(
     decimate_angle,
     decimate_faces,
 ):
-    """Creates a new alpha-wrapped collision mesh object from visual_obj.
-    
-    The original visual_obj mesh is kept completely untouched.
-    """
+    """Synchronously creates a new alpha-wrapped collision mesh object from visual_obj."""
     temp_in = tempfile.mktemp(suffix=".stl")
     temp_out = tempfile.mktemp(suffix=".stl")
 
     try:
-        # Export visual_obj to temp_in without modifying it
-        bpy.ops.object.select_all(action="DESELECT")
-        visual_obj.select_set(True)
-        bpy.context.view_layer.objects.active = visual_obj
-
-        if hasattr(bpy.ops.wm, "stl_export"):
-            bpy.ops.wm.stl_export(filepath=temp_in, export_selected_objects=True, apply_modifiers=True)
-        elif hasattr(bpy.ops.export_mesh, "stl"):
-            bpy.ops.export_mesh.stl(filepath=temp_in, use_selection=True, use_mesh_modifiers=True)
-        else:
-            raise RuntimeError("No STL export operator available in Blender.")
-
-        # Compute alpha wrap using the plugin's internal alpha_wrap module
+        export_object_to_stl(visual_obj, temp_in)
         alpha_wrap_mesh(
             input_path=temp_in,
             output_path=temp_out,
@@ -702,66 +880,31 @@ def alpha_wrap_collider(
             decimate_angle=decimate_angle,
             decimate_faces=decimate_faces,
         )
-
         if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
             raise RuntimeError("Alpha wrap produced an empty or missing output mesh.")
 
-        # Import wrapped STL as a brand-new mesh object
-        bpy.ops.object.select_all(action="DESELECT")
-        if hasattr(bpy.ops.wm, "stl_import"):
-            bpy.ops.wm.stl_import(filepath=temp_out)
-        elif hasattr(bpy.ops.import_mesh, "stl"):
-            bpy.ops.import_mesh.stl(filepath=temp_out)
-        else:
-            raise RuntimeError("No STL import operator available in Blender.")
-
-        collider_obj = bpy.context.active_object
-        if not collider_obj:
-            raise RuntimeError("Failed to import alpha wrap collider mesh into Blender.")
-
-        # Center origin on bounds
-        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
-
-        # Set collider types for SDF_Gen export
-        collider_obj.object_type = "ColliderObject"
-        collider_obj.collider_type = "MeshCollider"
-
-        # Ensure object is linked to scene collection before moving
-        if collider_obj.name not in bpy.context.scene.collection.objects:
-            bpy.context.scene.collection.objects.link(collider_obj)
-        for col in list(collider_obj.users_collection):
-            if col != bpy.context.scene.collection:
-                col.objects.unlink(collider_obj)
-
-        # Move to the appropriate _colliders collection
-        move_to_collection(visual_obj, collider_obj)
-
-        # Set collider material and wireframe display
-        SetColliderMaterial()
-
-        # Rename collider
-        collider_obj.name = (
+        collider_obj = import_stl_object(temp_out)
+        target_name = (
             (visual_obj.name + "_collider_alphawrap")
             .lower()
             .replace(".", "")
         )
-
-        # Add the margin modifier
-        add_margin_modifier()
-
+        setup_alpha_wrap_collider(collider_obj, visual_obj, target_name)
         return collider_obj
 
     finally:
-        if os.path.exists(temp_in):
-            os.remove(temp_in)
-        if os.path.exists(temp_out):
-            os.remove(temp_out)
+        for p in (temp_in, temp_out):
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
 
 
 class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     bl_idname = "mesh.create_alpha_wrap_collider"
     bl_label = "Create Alpha Wrap Collider"
-    bl_description = "Creates a new watertight alpha-wrapped collision mesh from selected visual objects"
+    bl_description = "Creates a new watertight alpha-wrapped collision mesh from selected visual objects asynchronously"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -774,7 +917,14 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             show_message_box(message=msg, title="PyMeshLab Missing", icon="ERROR")
             self.report(
                 {"WARNING"},
-                "PyMeshLab is not installed in Blender's Python environment."
+                "PyMeshLab is not installed in Blender's Python environment.",
+            )
+            return {"CANCELLED"}
+
+        if context.window_manager.alpha_wrap_in_progress:
+            self.report(
+                {"WARNING"},
+                "Alpha wrap is already in progress.",
             )
             return {"CANCELLED"}
 
@@ -789,8 +939,16 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         alpha = scene.alpha_wrap_alpha
         offset = scene.alpha_wrap_offset
         is_percentage = (scene.alpha_wrap_mode == "PERCENTAGE")
-        decimate_angle = scene.alpha_wrap_decimate_angle if scene.alpha_wrap_decimate_angle > 0 else None
-        decimate_faces = scene.alpha_wrap_decimate_faces if scene.alpha_wrap_decimate_faces > 0 else None
+        decimate_angle = (
+            scene.alpha_wrap_decimate_angle
+            if scene.alpha_wrap_decimate_angle > 0
+            else None
+        )
+        decimate_faces = (
+            scene.alpha_wrap_decimate_faces
+            if scene.alpha_wrap_decimate_faces > 0
+            else None
+        )
         per_obj = scene.alpha_wrap_per_obj
 
         selected_objs = get_selected_mesh_objects()
@@ -802,8 +960,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
-        created_colliders = []
-
+        tasks = []
         try:
             if not per_obj and len(selected_objs) > 1:
                 # Combine duplicates for wrapping into a single collider
@@ -814,54 +971,94 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                 bpy.ops.object.duplicate(linked=False)
                 bpy.ops.object.join()
                 temp_joined = bpy.context.active_object
+                temp_in = tempfile.mktemp(suffix=".stl")
+                temp_out = tempfile.mktemp(suffix=".stl")
                 try:
-                    collider = alpha_wrap_collider(
-                        temp_joined,
-                        alpha,
-                        offset,
-                        is_percentage,
-                        decimate_angle,
-                        decimate_faces,
-                    )
-                    created_colliders.append(collider)
-                    move_to_collection(selected_objs[0], collider)
-                    collider.name = (
-                        (selected_objs[0].name + "_collider_alphawrap")
+                    export_object_to_stl(temp_joined, temp_in)
+                finally:
+                    bpy.data.objects.remove(temp_joined, do_unlink=True)
+
+                target_name = (
+                    (selected_objs[0].name + "_collider_alphawrap")
+                    .lower()
+                    .replace(".", "")
+                )
+                tasks.append({
+                    "temp_in": temp_in,
+                    "temp_out": temp_out,
+                    "visual_obj_name": selected_objs[0].name,
+                    "target_name": target_name,
+                })
+            else:
+                for visual_obj in selected_objs:
+                    temp_in = tempfile.mktemp(suffix=".stl")
+                    temp_out = tempfile.mktemp(suffix=".stl")
+                    export_object_to_stl(visual_obj, temp_in)
+                    target_name = (
+                        (visual_obj.name + "_collider_alphawrap")
                         .lower()
                         .replace(".", "")
                     )
-                finally:
-                    bpy.data.objects.remove(temp_joined, do_unlink=True)
-            else:
-                for visual_obj in selected_objs:
-                    collider = alpha_wrap_collider(
-                        visual_obj,
-                        alpha,
-                        offset,
-                        is_percentage,
-                        decimate_angle,
-                        decimate_faces,
-                    )
-                    created_colliders.append(collider)
+                    tasks.append({
+                        "temp_in": temp_in,
+                        "temp_out": temp_out,
+                        "visual_obj_name": visual_obj.name,
+                        "target_name": target_name,
+                    })
+
+            # Restore original selection
+            bpy.ops.object.select_all(action="DESELECT")
+            for obj in selected_objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = selected_objs[0]
 
         except Exception as e:
+            _cleanup_task_files(tasks)
             show_message_box(
-                message=f"Alpha Wrap failed: {str(e)}",
+                message=f"Failed preparing Alpha Wrap tasks: {str(e)}",
                 title="Error",
                 icon="ERROR",
             )
             return {"CANCELLED"}
 
-        # Select the newly created colliders
-        bpy.ops.object.select_all(action="DESELECT")
-        for c in created_colliders:
-            c.select_set(True)
-        if created_colliders:
-            bpy.context.view_layer.objects.active = created_colliders[0]
+        wm = context.window_manager
+        wm.alpha_wrap_in_progress = True
+        initial_status = (
+            f"Wrapping (0/{len(tasks)})..." if len(tasks) > 1 else "Wrapping..."
+        )
+        wm.alpha_wrap_status = initial_status
 
+        params = {
+            "alpha": alpha,
+            "offset": offset,
+            "is_percentage": is_percentage,
+            "decimate_angle": decimate_angle,
+            "decimate_faces": decimate_faces,
+        }
+        state = {
+            "completed": 0,
+            "total": len(tasks),
+            "status": initial_status,
+            "error": None,
+            "is_done": False,
+        }
+
+        # Start background worker thread
+        thread = threading.Thread(
+            target=_alpha_wrap_worker,
+            args=(tasks, params, state),
+            daemon=True,
+        )
+        thread.start()
+
+        # Register non-blocking timer on main thread
+        timer_cb = _create_wrap_timer_callback(tasks, state)
+        bpy.app.timers.register(timer_cb, first_interval=0.05)
+
+        tag_redraw_view3d()
         self.report(
             {"INFO"},
-            f"Created {len(created_colliders)} Alpha Wrap collider(s)."
+            f"Alpha wrap started for {len(tasks)} mesh object(s) in background...",
         )
         return {"FINISHED"}
 
