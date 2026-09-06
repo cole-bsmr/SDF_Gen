@@ -904,7 +904,7 @@ def alpha_wrap_collider(
 class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     bl_idname = "mesh.create_alpha_wrap_collider"
     bl_label = "Create Alpha Wrap Collider"
-    bl_description = "Creates a new watertight alpha-wrapped collision mesh from selected visual objects asynchronously"
+    bl_description = "Generates a watertight, shrink-wrapped Alpha Wrap collision mesh from selected visual objects or their hierarchy asynchronously"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):

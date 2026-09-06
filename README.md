@@ -110,7 +110,7 @@ Creates a convex hull mesh collider. This method is less efficient but provides 
 
 ### Alpha Wrap Collider
 Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geometry. It runs asynchronously in the background so Blender remains responsive during computation.
-* **`Alpha`**: Size of the probe ball / feature resolution. In percentage mode, this is a percentage of the bounding box diagonal.
+* **`Alpha`**: Size of the probe ball / feature resolution. In percentage mode, this is a percentage of the bounding box diagonal. Smaller values capture finer features but increase computation time significantly (halving Alpha roughly increases runtime by 3x to 8x as spatial cell counts scale between `1 / alpha^2` and `1 / alpha^3`). Values between 1.0% and 3.0% are recommended for general use.
 * **`Offset`**: Surface offset / expansion distance added to the wrapped mesh.
 * **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters).
 * **`Planar Angle`**: Dihedral angle threshold in degrees for planar decimation to simplify flat coplanar faces (set to `0` to disable).

@@ -370,7 +370,15 @@ bpy.types.Scene.alpha_wrap_expand = bpy.props.BoolProperty(
 
 bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
     name="Alpha",
-    description="Alpha parameter: size of probe ball / feature resolution",
+    description=(
+        "Probe ball radius / feature resolution: controls how tightly the wrap conforms to the surface.\n"
+        "Smaller values capture finer geometric details, cavities, and indentations.\n"
+        "Larger values bridge across holes and gaps, creating a smoother outer shell.\n"
+        "Performance: computation duration scales sharply with smaller Alpha (~3x-8x longer when halved),\n"
+        "as 3D spatial cell and facet counts scale with (1 / Alpha^2) to (1 / Alpha^3).\n"
+        "Values between 1.0% and 3.0% provide an optimal balance of speed and fidelity.\n"
+        "Expressed as % of bounding box diagonal (Percentage mode) or meters (Absolute mode)"
+    ),
     default=2.0,
     min=0.0001,
     precision=4,
@@ -378,7 +386,12 @@ bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
 
 bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
     name="Offset",
-    description="Offset parameter: distance added to surface",
+    description=(
+        "Offset distance: thickness added outward from the input surface.\n"
+        "Guarantees the collision wrap strictly encloses the visual mesh with at least this margin.\n"
+        "Also thickens thin walls and non-manifold geometry into a solid watertight volume.\n"
+        "Expressed as % of bounding box diagonal (Percentage mode) or meters (Absolute mode)"
+    ),
     default=0.5,
     min=0.0,
     precision=4,
@@ -386,17 +399,32 @@ bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
 
 bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
     name="Mode",
-    description="Coordinate units for alpha and offset",
+    description="Coordinate units used for Alpha and Offset values",
     items=[
-        ("PERCENTAGE", "Percentage", "Percentage of bounding box diagonal"),
-        ("ABSOLUTE", "Absolute", "Absolute coordinate units (meters)"),
+        (
+            "PERCENTAGE",
+            "Percentage",
+            "Values are calculated as a percentage of the object bounding box diagonal. "
+            "Scale-independent and recommended for objects of varying sizes",
+        ),
+        (
+            "ABSOLUTE",
+            "Absolute",
+            "Values are in absolute metric units (meters). "
+            "Useful when exact physical tolerances or clearances are required",
+        ),
     ],
     default="PERCENTAGE",
 )
 
 bpy.types.Scene.alpha_wrap_decimate_angle = bpy.props.FloatProperty(
     name="Planar Angle",
-    description="Planar dihedral angle threshold in degrees for planar decimation (0 to disable)",
+    description=(
+        "Planar decimation threshold in degrees: collapses adjacent flat or coplanar faces.\n"
+        "Faces meeting at a dihedral angle below this value are merged into simpler polygons.\n"
+        "Significantly reduces face count while preserving sharp corners and geometric boundaries.\n"
+        "Set to 0 to disable planar decimation"
+    ),
     default=5.0,
     min=0.0,
     max=180.0,
@@ -405,14 +433,23 @@ bpy.types.Scene.alpha_wrap_decimate_angle = bpy.props.FloatProperty(
 
 bpy.types.Scene.alpha_wrap_decimate_faces = bpy.props.IntProperty(
     name="Target Faces",
-    description="Target number of faces to simplify via Quadric Edge Collapse (0 to disable)",
+    description=(
+        "Target face count for Quadric Edge Collapse decimation.\n"
+        "Further simplifies the mesh to the specified maximum number of triangular faces.\n"
+        "Applied after planar angle decimation.\n"
+        "Set to 0 to disable and keep all faces from the planar decimation step"
+    ),
     default=0,
     min=0,
 )
 
 bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
     name="Per Object",
-    description="Toggle for multiple selection behavior (create collider per object or join)",
+    description=(
+        "Multi-selection handling:\n"
+        "Enabled: creates an individual Alpha Wrap collider for each selected mesh or child mesh.\n"
+        "Disabled: merges all selected meshes into a single unified watertight wrap enclosing them all"
+    ),
     default=True,
 )
 
