@@ -1082,3 +1082,35 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         )
         return {"FINISHED"}
 
+
+class MESH_OT_restore_alpha_wrap_defaults(bpy.types.Operator):
+    bl_idname = "mesh.restore_alpha_wrap_defaults"
+    bl_label = "Restore Defaults"
+    bl_description = "Restores Alpha Wrap parameters to default values for the active mode"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        scene = context.scene
+
+        # Reset stored mode defaults
+        scene.alpha_wrap_alpha_percentage = 2.0
+        scene.alpha_wrap_offset_percentage = 0.5
+        scene.alpha_wrap_alpha_absolute = 0.02
+        scene.alpha_wrap_offset_absolute = 0.005
+
+        # Update active properties based on current mode
+        if scene.alpha_wrap_mode == "PERCENTAGE":
+            scene.alpha_wrap_alpha = 2.0
+            scene.alpha_wrap_offset = 0.5
+        else:
+            scene.alpha_wrap_alpha = 0.02
+            scene.alpha_wrap_offset = 0.005
+
+        scene.alpha_wrap_decimate_angle = 5.0
+        scene.alpha_wrap_decimate_faces = 0
+        scene.alpha_wrap_per_obj = True
+
+        self.report({"INFO"}, "Alpha Wrap default parameters restored.")
+        return {"FINISHED"}
+
+

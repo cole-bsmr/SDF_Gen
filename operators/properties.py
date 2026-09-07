@@ -368,6 +368,84 @@ bpy.types.Scene.alpha_wrap_expand = bpy.props.BoolProperty(
     default=True,
 )
 
+# Default values for Alpha Wrap modes
+DEFAULT_ALPHA_PERCENTAGE = 2.0
+DEFAULT_OFFSET_PERCENTAGE = 0.5
+DEFAULT_ALPHA_ABSOLUTE = 0.02
+DEFAULT_OFFSET_ABSOLUTE = 0.005
+
+_is_updating_alpha_wrap_mode = False
+
+
+def _on_alpha_wrap_alpha_update(self, context):
+    global _is_updating_alpha_wrap_mode
+    if _is_updating_alpha_wrap_mode:
+        return
+    mode = getattr(self, "alpha_wrap_mode", "PERCENTAGE")
+    if mode == "PERCENTAGE":
+        self.alpha_wrap_alpha_percentage = self.alpha_wrap_alpha
+    else:
+        self.alpha_wrap_alpha_absolute = self.alpha_wrap_alpha
+
+
+def _on_alpha_wrap_offset_update(self, context):
+    global _is_updating_alpha_wrap_mode
+    if _is_updating_alpha_wrap_mode:
+        return
+    mode = getattr(self, "alpha_wrap_mode", "PERCENTAGE")
+    if mode == "PERCENTAGE":
+        self.alpha_wrap_offset_percentage = self.alpha_wrap_offset
+    else:
+        self.alpha_wrap_offset_absolute = self.alpha_wrap_offset
+
+
+def _on_alpha_wrap_mode_update(self, context):
+    global _is_updating_alpha_wrap_mode
+    _is_updating_alpha_wrap_mode = True
+    try:
+        if self.alpha_wrap_mode == "PERCENTAGE":
+            self.alpha_wrap_alpha = self.alpha_wrap_alpha_percentage
+            self.alpha_wrap_offset = self.alpha_wrap_offset_percentage
+        else:
+            self.alpha_wrap_alpha = self.alpha_wrap_alpha_absolute
+            self.alpha_wrap_offset = self.alpha_wrap_offset_absolute
+    finally:
+        _is_updating_alpha_wrap_mode = False
+
+
+# Stored last-entered values per mode
+bpy.types.Scene.alpha_wrap_alpha_percentage = bpy.props.FloatProperty(
+    name="Alpha (Percentage)",
+    description="Stored Alpha value for Percentage mode",
+    default=DEFAULT_ALPHA_PERCENTAGE,
+    soft_min=0.0001,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_offset_percentage = bpy.props.FloatProperty(
+    name="Offset (Percentage)",
+    description="Stored Offset value for Percentage mode",
+    default=DEFAULT_OFFSET_PERCENTAGE,
+    soft_min=0.0001,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_alpha_absolute = bpy.props.FloatProperty(
+    name="Alpha (Absolute)",
+    description="Stored Alpha value for Absolute mode",
+    default=DEFAULT_ALPHA_ABSOLUTE,
+    soft_min=0.0001,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_offset_absolute = bpy.props.FloatProperty(
+    name="Offset (Absolute)",
+    description="Stored Offset value for Absolute mode",
+    default=DEFAULT_OFFSET_ABSOLUTE,
+    soft_min=0.0001,
+    precision=4,
+)
+
 bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
     name="Alpha",
     description=(
@@ -378,11 +456,12 @@ bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
         "as 3D spatial cell and facet counts scale with (1 / Alpha^2) to (1 / Alpha^3).\n"
         "Values between 1.0% and 3.0% provide an optimal balance of speed and fidelity.\n"
         "Must be strictly positive (> 0) as required by CGAL 3D Alpha Wrapping.\n"
-        "Expressed as % of bounding box diagonal (Percentage mode) or meters (Absolute mode)"
+        "Expressed as % of bounding box diagonal (Percentage mode, default: 2.0%) or meters (Absolute mode, default: 0.02m)"
     ),
-    default=2.0,
+    default=DEFAULT_ALPHA_PERCENTAGE,
     soft_min=0.0001,
     precision=4,
+    update=_on_alpha_wrap_alpha_update,
 )
 
 bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
@@ -392,11 +471,12 @@ bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
         "Guarantees the collision wrap strictly encloses the visual mesh with at least this margin.\n"
         "Also thickens thin walls and non-manifold geometry into a solid watertight volume.\n"
         "Must be strictly positive (> 0) as required by CGAL 3D Alpha Wrapping.\n"
-        "Expressed as % of bounding box diagonal (Percentage mode) or meters (Absolute mode)"
+        "Expressed as % of bounding box diagonal (Percentage mode, default: 0.5%) or meters (Absolute mode, default: 0.005m)"
     ),
-    default=0.5,
+    default=DEFAULT_OFFSET_PERCENTAGE,
     soft_min=0.0001,
     precision=4,
+    update=_on_alpha_wrap_offset_update,
 )
 
 bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
@@ -417,6 +497,7 @@ bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
         ),
     ],
     default="PERCENTAGE",
+    update=_on_alpha_wrap_mode_update,
 )
 
 bpy.types.Scene.alpha_wrap_decimate_angle = bpy.props.FloatProperty(

@@ -159,7 +159,7 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                 settings_col.prop(scene, "alpha_wrap_decimate_faces", text="Decimate Faces")
                 settings_col.prop(scene, "alpha_wrap_per_obj", text="Per Object")
 
-                btn_row = wrap_col.row()
+                btn_row = wrap_col.row(align=True)
                 if in_progress:
                     btn_row.enabled = False
                     status_text = (
@@ -171,8 +171,18 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                         text=status_text,
                         icon="TIME",
                     )
+                    btn_row.operator(
+                        "mesh.restore_alpha_wrap_defaults",
+                        text="Restore Defaults",
+                        icon="FILE_REFRESH",
+                    )
                 else:
                     btn_row.operator("mesh.create_alpha_wrap_collider", text="Create")
+                    btn_row.operator(
+                        "mesh.restore_alpha_wrap_defaults",
+                        text="Restore Defaults",
+                        icon="FILE_REFRESH",
+                    )
 
 
         elif scene.tab_option == "JOINTS":
