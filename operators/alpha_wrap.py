@@ -81,6 +81,9 @@ def decimate_by_planar_angle(
     max_passes: int = 15,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Decimates coplanar edges where adjacent face normal difference is below max_angle_deg."""
+    if faces is None or len(faces) == 0 or vertices is None or len(vertices) == 0:
+        return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int64)
+
     cos_thr = math.cos(math.radians(max_angle_deg))
     v = np.array(vertices, dtype=np.float64, copy=True)
     f = np.array(faces, dtype=np.int64, copy=True)
@@ -167,10 +170,13 @@ def decimate_by_planar_angle(
         f = np.array(new_faces, dtype=np.int64)
 
     # Compact unreferenced vertices
+    if len(f) == 0:
+        return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int64)
+
     used = np.unique(f)
     mapping = {old: new for new, old in enumerate(used)}
     new_v = v[used]
-    final_f = np.vectorize(mapping.get)(f)
+    final_f = np.vectorize(mapping.get, otypes=[np.int64])(f)
 
     return new_v, final_f
 
@@ -190,6 +196,16 @@ def alpha_wrap_mesh(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """Wraps a 3D mesh using CGAL 3D Alpha-Wrapping with optional planar decimation."""
+    # CGAL 3D Alpha Wrapping strictly requires alpha > 0 and offset > 0.
+    if alpha <= 0.0:
+        raise ValueError(
+            f"Alpha must be strictly positive (> 0) as required by CGAL, got {alpha}."
+        )
+    if offset <= 0.0:
+        raise ValueError(
+            f"Offset must be strictly positive (> 0) as required by CGAL, got {offset}."
+        )
+
     pm = _ensure_pymeshlab()
 
     if not os.path.exists(input_path):
@@ -212,7 +228,6 @@ def alpha_wrap_mesh(
 
     initial_stats = get_mesh_stats(ms)
 
-    # Prepare alpha and offset parameter values
     alpha_param = _make_filter_value(pm, alpha, is_percentage)
     offset_param = _make_filter_value(pm, offset, is_percentage)
 
@@ -221,6 +236,12 @@ def alpha_wrap_mesh(
         print(f"--> Executing Alpha-Wrap ({mode_str})...")
 
     ms.generate_alpha_wrap(alpha=alpha_param, offset=offset_param)
+
+    if ms.current_mesh().face_number() == 0:
+        raise RuntimeError(
+            "Alpha wrap produced an empty mesh. Please ensure the input mesh "
+            "contains valid 3D geometry and Alpha/Offset parameters are sufficiently large."
+        )
 
     # Optional planar angle-based decimation
     if decimate_angle is not None and decimate_angle > 0.0:

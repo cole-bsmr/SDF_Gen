@@ -928,6 +928,29 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
+        scene = context.scene
+        alpha = scene.alpha_wrap_alpha
+        offset = scene.alpha_wrap_offset
+
+        if alpha <= 0.0 or offset <= 0.0:
+            errors = []
+            if alpha <= 0.0:
+                errors.append(
+                    f"Alpha must be strictly positive (> 0), but is set to {alpha:.4g}."
+                )
+            if offset <= 0.0:
+                errors.append(
+                    f"Offset must be strictly positive (> 0), but is set to {offset:.4g}."
+                )
+            error_message = "\n".join(errors)
+            show_message_box(
+                message=error_message,
+                title="Invalid Alpha Wrap Parameters",
+                icon="ERROR",
+            )
+            self.report({"ERROR"}, error_message.replace("\n", " "))
+            return {"CANCELLED"}
+
         if not validate_selection():
             return {"CANCELLED"}
 
@@ -935,9 +958,6 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             bpy.context.view_layer.layer_collection
         )
 
-        scene = context.scene
-        alpha = scene.alpha_wrap_alpha
-        offset = scene.alpha_wrap_offset
         is_percentage = (scene.alpha_wrap_mode == "PERCENTAGE")
         decimate_angle = (
             scene.alpha_wrap_decimate_angle

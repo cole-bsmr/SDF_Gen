@@ -125,8 +125,35 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
                 settings_col = wrap_col.column()
                 settings_col.enabled = not in_progress
-                settings_col.prop(scene, "alpha_wrap_alpha", text="Alpha")
-                settings_col.prop(scene, "alpha_wrap_offset", text="Offset")
+
+                # Alpha input with inline validation
+                alpha_invalid = scene.alpha_wrap_alpha <= 0.0
+                alpha_row = settings_col.row()
+                if alpha_invalid:
+                    alpha_row.alert = True
+                alpha_row.prop(scene, "alpha_wrap_alpha", text="Alpha")
+                if alpha_invalid:
+                    warn_row = settings_col.row()
+                    warn_row.alert = True
+                    warn_row.label(
+                        text="Alpha must be strictly positive (> 0)",
+                        icon="ERROR",
+                    )
+
+                # Offset input with inline validation
+                offset_invalid = scene.alpha_wrap_offset <= 0.0
+                offset_row = settings_col.row()
+                if offset_invalid:
+                    offset_row.alert = True
+                offset_row.prop(scene, "alpha_wrap_offset", text="Offset")
+                if offset_invalid:
+                    warn_row = settings_col.row()
+                    warn_row.alert = True
+                    warn_row.label(
+                        text="Offset must be strictly positive (> 0)",
+                        icon="ERROR",
+                    )
+
                 settings_col.prop(scene, "alpha_wrap_mode", text="Mode")
                 settings_col.prop(scene, "alpha_wrap_decimate_angle", text="Planar Angle")
                 settings_col.prop(scene, "alpha_wrap_decimate_faces", text="Decimate Faces")

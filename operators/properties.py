@@ -377,10 +377,11 @@ bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
         "Performance: computation duration scales sharply with smaller Alpha (~3x-8x longer when halved),\n"
         "as 3D spatial cell and facet counts scale with (1 / Alpha^2) to (1 / Alpha^3).\n"
         "Values between 1.0% and 3.0% provide an optimal balance of speed and fidelity.\n"
+        "Must be strictly positive (> 0) as required by CGAL 3D Alpha Wrapping.\n"
         "Expressed as % of bounding box diagonal (Percentage mode) or meters (Absolute mode)"
     ),
     default=2.0,
-    min=0.0001,
+    soft_min=0.0001,
     precision=4,
 )
 
@@ -390,10 +391,11 @@ bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
         "Offset distance: thickness added outward from the input surface.\n"
         "Guarantees the collision wrap strictly encloses the visual mesh with at least this margin.\n"
         "Also thickens thin walls and non-manifold geometry into a solid watertight volume.\n"
+        "Must be strictly positive (> 0) as required by CGAL 3D Alpha Wrapping.\n"
         "Expressed as % of bounding box diagonal (Percentage mode) or meters (Absolute mode)"
     ),
     default=0.5,
-    min=0.0,
+    soft_min=0.0001,
     precision=4,
 )
 
