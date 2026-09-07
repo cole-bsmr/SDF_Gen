@@ -703,10 +703,36 @@ def import_stl_object(filepath):
     return imported_obj
 
 
-def setup_alpha_wrap_collider(collider_obj, visual_obj, target_name):
+def apply_planar_decimate_modifier(collider_obj, angle_deg: float):
+    """Simplifies coplanar faces using Blender's built-in Decimate -> Planar modifier."""
+    if angle_deg is None or angle_deg <= 0.0 or not collider_obj.data.polygons:
+        return
+    mod = collider_obj.modifiers.new(name="Alpha Wrap Planar Decimate", type="DECIMATE")
+    mod.decimate_type = "DISSOLVE"
+    mod.angle_limit = math.radians(angle_deg)
+    prev_active = bpy.context.view_layer.objects.active
+    try:
+        bpy.context.view_layer.objects.active = collider_obj
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    except Exception as e:
+        print(f"Warning: Failed to apply Decimate Planar modifier: {e}")
+    finally:
+        bpy.context.view_layer.objects.active = prev_active
+
+
+def setup_alpha_wrap_collider(
+    collider_obj,
+    visual_obj,
+    target_name,
+    decimate_angle=None,
+):
     """Configures and positions an imported STL object as an Alpha Wrap collider."""
     bpy.context.view_layer.objects.active = collider_obj
     bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+
+    # Apply planar angle decimation using Blender's built-in Decimate -> Planar algorithm
+    if decimate_angle is not None and decimate_angle > 0.0:
+        apply_planar_decimate_modifier(collider_obj, decimate_angle)
 
     collider_obj.object_type = "ColliderObject"
     collider_obj.collider_type = "MeshCollider"
@@ -826,6 +852,7 @@ def _create_wrap_timer_callback(tasks, state):
                     collider_obj=collider_obj,
                     visual_obj=visual_obj,
                     target_name=task["target_name"],
+                    decimate_angle=task.get("decimate_angle"),
                 )
                 created_colliders.append(collider_obj)
 
@@ -889,7 +916,12 @@ def alpha_wrap_collider(
             .lower()
             .replace(".", "")
         )
-        setup_alpha_wrap_collider(collider_obj, visual_obj, target_name)
+        setup_alpha_wrap_collider(
+            collider_obj=collider_obj,
+            visual_obj=visual_obj,
+            target_name=target_name,
+            decimate_angle=decimate_angle,
+        )
         return collider_obj
 
     finally:
@@ -1008,6 +1040,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                     "temp_out": temp_out,
                     "visual_obj_name": selected_objs[0].name,
                     "target_name": target_name,
+                    "decimate_angle": decimate_angle,
                 })
             else:
                 for visual_obj in selected_objs:
@@ -1024,6 +1057,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                         "temp_out": temp_out,
                         "visual_obj_name": visual_obj.name,
                         "target_name": target_name,
+                        "decimate_angle": decimate_angle,
                     })
 
             # Restore original selection

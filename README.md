@@ -113,7 +113,7 @@ Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geomet
 * **`Alpha`**: Size of the probe ball / feature resolution (must be > 0). In percentage mode, this is a percentage of the bounding box diagonal (default: `2.0%`). In absolute mode, this is in meters (default: `0.02m`). Smaller values capture finer features but increase computation time significantly (halving Alpha roughly increases runtime by 3x to 8x as spatial cell counts scale between `1 / alpha^2` and `1 / alpha^3`).
 * **`Offset`**: Surface offset / expansion distance added to the wrapped mesh (must be > 0). Default: `0.5%` (percentage mode) or `0.005m` (absolute mode).
 * **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters). Switching between modes preserves the last entered values for each mode.
-* **`Planar Angle`**: Dihedral angle threshold in degrees for planar decimation to simplify flat coplanar faces (set to `0` to disable).
+* **`Planar Angle`**: Dihedral angle limit in degrees using Blender's built-in Decimate Planar modifier to cleanly dissolve flat coplanar faces without generating overlapping or duplicate geometry (set to `0` to disable).
 * **`Target Faces`**: Optional target face count simplification using Quadric Edge Collapse (set to `0` to disable).
 * **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider.
 * **`Restore Defaults`**: Resets all Alpha Wrap parameters back to their recommended default values for the active mode.

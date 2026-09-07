@@ -503,9 +503,9 @@ bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
 bpy.types.Scene.alpha_wrap_decimate_angle = bpy.props.FloatProperty(
     name="Planar Angle",
     description=(
-        "Planar decimation threshold in degrees: collapses adjacent flat or coplanar faces.\n"
-        "Faces meeting at a dihedral angle below this value are merged into simpler polygons.\n"
-        "Significantly reduces face count while preserving sharp corners and geometric boundaries.\n"
+        "Planar decimation angle limit in degrees (uses Blender's built-in Decimate Planar modifier):\n"
+        "Dissolves adjacent coplanar faces meeting at a dihedral angle below this threshold.\n"
+        "Significantly reduces polygon count on flat surfaces while cleanly preserving sharp edges.\n"
         "Set to 0 to disable planar decimation"
     ),
     default=5.0,

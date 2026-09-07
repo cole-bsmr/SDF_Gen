@@ -3,13 +3,10 @@
 Contained entirely within SDF_Gen. Uses Blender's Python and PyMeshLab.
 """
 
-import math
 import os
 import sys
 import time
-from typing import Any, Dict, Optional, Tuple
-
-import numpy as np
+from typing import Any, Dict, Optional
 
 
 def is_pymeshlab_available() -> bool:
@@ -74,112 +71,6 @@ def get_mesh_stats(mesh_set: Any) -> Dict[str, Any]:
     }
 
 
-def decimate_by_planar_angle(
-    vertices: np.ndarray,
-    faces: np.ndarray,
-    max_angle_deg: float = 5.0,
-    max_passes: int = 15,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Decimates coplanar edges where adjacent face normal difference is below max_angle_deg."""
-    if faces is None or len(faces) == 0 or vertices is None or len(vertices) == 0:
-        return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int64)
-
-    cos_thr = math.cos(math.radians(max_angle_deg))
-    v = np.array(vertices, dtype=np.float64, copy=True)
-    f = np.array(faces, dtype=np.int64, copy=True)
-
-    for _ in range(max_passes):
-        if len(f) == 0:
-            break
-
-        # 1. Compute face normals
-        v0 = v[f[:, 0]]
-        v1 = v[f[:, 1]]
-        v2 = v[f[:, 2]]
-        cross = np.cross(v1 - v0, v2 - v0)
-        norm = np.linalg.norm(cross, axis=1, keepdims=True)
-        norm[norm == 0] = 1.0
-        normals = cross / norm
-
-        # 2. Build vertex-to-faces and edge-to-faces maps
-        v_to_faces = [[] for _ in range(len(v))]
-        edge_to_faces = {}
-        for fi, tri in enumerate(f):
-            for vi in tri:
-                v_to_faces[vi].append(fi)
-            for a, b in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])]:
-                edge = (min(a, b), max(a, b))
-                edge_to_faces.setdefault(edge, []).append(fi)
-
-        # 3. Find candidates where shared faces are coplanar
-        candidates = []
-        for (ea, eb), f_list in edge_to_faces.items():
-            if len(f_list) == 2:
-                n0 = normals[f_list[0]]
-                n1 = normals[f_list[1]]
-                dot = np.dot(n0, n1)
-                if dot >= cos_thr:
-                    candidates.append((ea, eb, dot))
-
-        if not candidates:
-            break
-
-        candidates.sort(key=lambda x: x[2], reverse=True)
-
-        # 4. Collapse edges safely
-        collapsed_map = {}
-        removed_vertices = set()
-
-        for ea, eb, _ in candidates:
-            if ea in removed_vertices or eb in removed_vertices:
-                continue
-
-            valid_collapse = True
-            for nfi in v_to_faces[eb]:
-                tri = f[nfi]
-                if ea in tri:
-                    continue
-                new_tri_pts = [v[ea] if vi == eb else v[vi] for vi in tri]
-                new_cross = np.cross(new_tri_pts[1] - new_tri_pts[0], new_tri_pts[2] - new_tri_pts[0])
-                new_norm = np.linalg.norm(new_cross)
-                if new_norm < 1e-12:
-                    valid_collapse = False
-                    break
-                new_n = new_cross / new_norm
-                old_n = normals[nfi]
-                if np.dot(new_n, old_n) < cos_thr:
-                    valid_collapse = False
-                    break
-
-            if valid_collapse:
-                collapsed_map[eb] = ea
-                removed_vertices.add(eb)
-
-        if not collapsed_map:
-            break
-
-        # Rebuild faces
-        new_faces = []
-        for tri in f:
-            t0 = collapsed_map.get(tri[0], tri[0])
-            t1 = collapsed_map.get(tri[1], tri[1])
-            t2 = collapsed_map.get(tri[2], tri[2])
-            if t0 != t1 and t1 != t2 and t2 != t0:
-                new_faces.append([t0, t1, t2])
-
-        f = np.array(new_faces, dtype=np.int64)
-
-    # Compact unreferenced vertices
-    if len(f) == 0:
-        return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int64)
-
-    used = np.unique(f)
-    mapping = {old: new for new, old in enumerate(used)}
-    new_v = v[used]
-    final_f = np.vectorize(mapping.get, otypes=[np.int64])(f)
-
-    return new_v, final_f
-
 
 def alpha_wrap_mesh(
     input_path: str,
@@ -242,18 +133,6 @@ def alpha_wrap_mesh(
             "Alpha wrap produced an empty mesh. Please ensure the input mesh "
             "contains valid 3D geometry and Alpha/Offset parameters are sufficiently large."
         )
-
-    # Optional planar angle-based decimation
-    if decimate_angle is not None and decimate_angle > 0.0:
-        if verbose:
-            print(f"--> Decimating by planar dihedral angle ({decimate_angle:.1f}° threshold)...")
-        curr_m = ms.current_mesh()
-        v_mat = curr_m.vertex_matrix()
-        f_mat = curr_m.face_matrix()
-
-        new_verts, new_faces = decimate_by_planar_angle(v_mat, f_mat, max_angle_deg=decimate_angle)
-        new_mesh = pm.Mesh(vertex_matrix=new_verts, face_matrix=new_faces)
-        ms.add_mesh(new_mesh, "angle_decimated")
 
     # Optional Quadric Edge Collapse decimation
     if decimate_faces is not None or decimate_perc is not None:
