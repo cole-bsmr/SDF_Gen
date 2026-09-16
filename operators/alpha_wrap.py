@@ -9,12 +9,52 @@ import time
 from typing import Any, Dict, Optional
 
 
+def get_blender_python_executable() -> str:
+    """Finds the Python executable for the current Blender instance across platforms."""
+    # 1. If sys.executable is already a python executable
+    exe = sys.executable
+    if exe and os.path.basename(exe).lower().startswith("python"):
+        return exe
+
+    # 2. Look inside Blender's python directory (sys.prefix)
+    prefix = sys.prefix
+    candidates = []
+    if sys.platform == "win32":
+        candidates.extend([
+            os.path.join(prefix, "bin", "python.exe"),
+            os.path.join(prefix, "python.exe"),
+        ])
+    else:
+        candidates.extend([
+            os.path.join(prefix, "bin", "python3"),
+            os.path.join(prefix, "bin", "python"),
+        ])
+
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+
+    return exe or "python"
+
+
 def is_pymeshlab_available() -> bool:
     """Checks whether pymeshlab can be imported in Blender's Python."""
     try:
+        import site
+        import importlib
+        import importlib.util
+        user_site = site.getusersitepackages()
+        if user_site and os.path.exists(user_site) and user_site not in sys.path:
+            sys.path.append(user_site)
+        importlib.invalidate_caches()
+        spec = importlib.util.find_spec("pymeshlab")
+        if spec is None:
+            sys.modules.pop("pymeshlab", None)
+            return False
         import pymeshlab
         return True
-    except ImportError:
+    except Exception:
+        sys.modules.pop("pymeshlab", None)
         return False
 
 
@@ -27,14 +67,15 @@ def _ensure_pymeshlab():
     Raises:
         ImportError: If pymeshlab is not installed in Blender's Python.
     """
-    try:
+    if is_pymeshlab_available():
         import pymeshlab
         return pymeshlab
-    except ImportError as e:
-        raise ImportError(
-            "PyMeshLab is required for Alpha Wrap. "
-            "Please install it in Blender's Python via: pip install pymeshlab"
-        ) from e
+
+    raise ImportError(
+        "PyMeshLab is required for Alpha Wrap. "
+        "Please click 'Install PyMeshLab' in the Colliders panel or install via: "
+        f"{get_blender_python_executable()} -m pip install pymeshlab"
+    )
 
 
 def _make_filter_value(ml_module: Any, value: float, is_percentage: bool) -> Any:
@@ -135,7 +176,7 @@ def alpha_wrap_mesh(
         )
 
     # Optional Quadric Edge Collapse decimation
-    if decimate_faces is not None or decimate_perc is not None:
+    if (decimate_faces is not None and int(decimate_faces) > 0) or (decimate_perc is not None and float(decimate_perc) > 0.0):
         qec_kwargs = {
             "preservenormal": True,
             "planarquadric": planar_quadric,
@@ -143,9 +184,9 @@ def alpha_wrap_mesh(
         if planar_quadric:
             qec_kwargs["planarweight"] = 0.01
 
-        if decimate_faces is not None:
+        if decimate_faces is not None and int(decimate_faces) > 0:
             ms.meshing_decimation_quadric_edge_collapse(targetfacenum=int(decimate_faces), **qec_kwargs)
-        elif decimate_perc is not None:
+        elif decimate_perc is not None and float(decimate_perc) > 0.0:
             ms.meshing_decimation_quadric_edge_collapse(targetperc=float(decimate_perc), **qec_kwargs)
 
     # Optional cleaning and repair

@@ -37,20 +37,25 @@ The add-on panel will appear in the 3D Viewport sidebar (**N** key) under the **
 
 ### 2. Optional Dependencies (Alpha Wrap Collider)
 
-The **Alpha Wrap** collider generator requires [PyMeshLab](https://github.com/cnr-isti-vclab/PyMeshLab) to produce watertight, shrink-wrapped collision meshes. If you plan to use Alpha Wrap, install `pymeshlab` into **Blender's bundled Python environment**:
+The **Alpha Wrap** collider generator requires [PyMeshLab](https://github.com/cnr-isti-vclab/PyMeshLab) to produce watertight, shrink-wrapped collision meshes.
 
-* **Linux:**
-  ```bash
-  /path/to/blender/<version>/python/bin/python3 -m pip install pymeshlab
-  ```
-* **macOS:**
-  ```bash
-  /Applications/Blender.app/Contents/Resources/<version>/python/bin/python3 -m pip install pymeshlab
-  ```
-* **Windows:**
-  ```cmd
-  "C:\Program Files\Blender Foundation\Blender <version>\<version>\python\bin\python.exe" -m pip install pymeshlab
-  ```
+* **In-Addon One-Click Install (Recommended):**
+  In the **Colliders** tab, locate the **Alpha Wrap** section and click the **`Install PyMeshLab`** button. Confirm the dialog prompt, and the add-on will automatically download and install PyMeshLab in the background. Once finished, the Alpha Wrap menu will immediately appear.
+
+* **Manual Installation (Alternative):**
+  You can also install `pymeshlab` manually into **Blender's bundled Python environment**:
+  * **Linux:**
+    ```bash
+    /path/to/blender/<version>/python/bin/python3 -m pip install pymeshlab
+    ```
+  * **macOS:**
+    ```bash
+    /Applications/Blender.app/Contents/Resources/<version>/python/bin/python3 -m pip install pymeshlab
+    ```
+  * **Windows:**
+    ```cmd
+    "C:\Program Files\Blender Foundation\Blender <version>\<version>\python\bin\python.exe" -m pip install pymeshlab
+    ```
 
 *(Note: Standard primitive colliders and convex hull mesh colliders do not require external dependencies.)*
 

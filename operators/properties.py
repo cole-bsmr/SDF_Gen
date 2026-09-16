@@ -362,12 +362,6 @@ bpy.types.PoseBone.pose_bone_location = FloatVectorProperty(
 )
 
 # Alpha Wrap Collider Properties
-bpy.types.Scene.alpha_wrap_expand = bpy.props.BoolProperty(
-    name="Alpha Wrap Expand",
-    description="Expand or collapse the Alpha Wrap settings section",
-    default=True,
-)
-
 # Default values for Alpha Wrap modes
 DEFAULT_ALPHA_PERCENTAGE = 2.0
 DEFAULT_OFFSET_PERCENTAGE = 0.5
@@ -526,16 +520,6 @@ bpy.types.Scene.alpha_wrap_decimate_faces = bpy.props.IntProperty(
     min=0,
 )
 
-bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
-    name="Per Object",
-    description=(
-        "Multi-selection handling:\n"
-        "Enabled: creates an individual Alpha Wrap collider for each selected mesh or child mesh.\n"
-        "Disabled: merges all selected meshes into a single unified watertight wrap enclosing them all"
-    ),
-    default=True,
-)
-
 # Alpha Wrap Async State
 bpy.types.WindowManager.alpha_wrap_in_progress = bpy.props.BoolProperty(
     name="Alpha Wrap In Progress",
@@ -547,4 +531,17 @@ bpy.types.WindowManager.alpha_wrap_status = bpy.props.StringProperty(
     name="Alpha Wrap Status",
     description="Current status of the background alpha wrap operation",
     default="",
-)
+)
+
+# PyMeshLab Installation State
+bpy.types.WindowManager.pymeshlab_installing = bpy.props.BoolProperty(
+    name="PyMeshLab Installing",
+    description="Indicates if PyMeshLab is currently being installed in the background",
+    default=False,
+)
+
+bpy.types.WindowManager.pymeshlab_install_status = bpy.props.StringProperty(
+    name="PyMeshLab Install Status",
+    description="Current status of PyMeshLab installation",
+    default="",
+)

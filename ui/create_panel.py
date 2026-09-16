@@ -8,6 +8,7 @@ from ..operators.general_functions import links_check
 from ..operators.general_functions import get_armature
 from ..operators.general_functions import get_instances_collection
 from ..operators.create import switch_to_viewlayer
+from ..operators.alpha_wrap import is_pymeshlab_available
 
 # bpy.types.Scene.armature_found = bpy.props.BoolProperty(default=False)
 
@@ -77,22 +78,38 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
         elif scene.tab_option == "COLLIDERS":
             links_found = links_check()
-            split = box.split()
-            col = split.column()
+            col = box.column()
 
             if links_found == False:
                 col.label(text="Something")
 
-            col.label(text="Create:")
+            col.label(text="Primitive Colliders:")
             col.operator("mesh.add_collider", text="Box").shape_type = "Box"
             col.operator("mesh.add_collider", text="Cylinder").shape_type = "Cylinder"
             col.operator("mesh.add_collider", text="Sphere").shape_type = "Sphere"
             col.operator("mesh.add_collider", text="Cone").shape_type = "Cone"
             col.operator("mesh.add_collider", text="Plane").shape_type = "Plane"
-            col.operator("mesh.add_collider", text="Mesh Collider").shape_type = "Mesh"
 
-            col = split.column()
-            
+            col.label(text="Mesh Colliders:")
+            col.operator("mesh.add_collider", text="Convex Hull").shape_type = "Mesh"
+
+            installing = getattr(context.window_manager, "pymeshlab_installing", False)
+            if installing:
+                status_text = (
+                    getattr(context.window_manager, "pymeshlab_install_status", "")
+                    or "Installing PyMeshLab..."
+                )
+                col.operator(
+                    "mesh.install_pymeshlab",
+                    text=status_text,
+                    icon="TIME",
+                )
+            elif not is_pymeshlab_available():
+                col.operator("mesh.install_pymeshlab", text="Alpha Wrap")
+            else:
+                col.operator("mesh.create_alpha_wrap_collider", text="Alpha Wrap")
+
+            col = box.column()
             col.label(text="Transform:")
             col.operator("wm.tool_set_by_id", text="Scale Cage").name = (
                 "builtin.scale_cage"
@@ -106,84 +123,6 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
             col.label(text="Global Margin:")
             col.prop(bpy.context.scene, "collider_margin_thickness", text="")
-
-            # Alpha Wrap section
-            wrap_box = layout.box()
-            wrap_header = wrap_box.row()
-            wrap_header.prop(
-                scene,
-                "alpha_wrap_expand",
-                icon="TRIA_DOWN" if scene.alpha_wrap_expand else "TRIA_RIGHT",
-                icon_only=True,
-                emboss=False,
-            )
-            wrap_header.label(text="Alpha Wrap")
-
-            if scene.alpha_wrap_expand:
-                wrap_col = wrap_box.column()
-                in_progress = context.window_manager.alpha_wrap_in_progress
-
-                settings_col = wrap_col.column()
-                settings_col.enabled = not in_progress
-
-                # Alpha input with inline validation
-                alpha_invalid = scene.alpha_wrap_alpha <= 0.0
-                alpha_row = settings_col.row()
-                if alpha_invalid:
-                    alpha_row.alert = True
-                alpha_row.prop(scene, "alpha_wrap_alpha", text="Alpha")
-                if alpha_invalid:
-                    warn_row = settings_col.row()
-                    warn_row.alert = True
-                    warn_row.label(
-                        text="Alpha must be strictly positive (> 0)",
-                        icon="ERROR",
-                    )
-
-                # Offset input with inline validation
-                offset_invalid = scene.alpha_wrap_offset <= 0.0
-                offset_row = settings_col.row()
-                if offset_invalid:
-                    offset_row.alert = True
-                offset_row.prop(scene, "alpha_wrap_offset", text="Offset")
-                if offset_invalid:
-                    warn_row = settings_col.row()
-                    warn_row.alert = True
-                    warn_row.label(
-                        text="Offset must be strictly positive (> 0)",
-                        icon="ERROR",
-                    )
-
-                settings_col.prop(scene, "alpha_wrap_mode", text="Mode")
-                settings_col.prop(scene, "alpha_wrap_decimate_angle", text="Planar Angle")
-                settings_col.prop(scene, "alpha_wrap_decimate_faces", text="Decimate Faces")
-                settings_col.prop(scene, "alpha_wrap_per_obj", text="Per Object")
-
-                btn_row = wrap_col.row(align=True)
-                if in_progress:
-                    btn_row.enabled = False
-                    status_text = (
-                        context.window_manager.alpha_wrap_status
-                        or "Creating Alpha Wrap..."
-                    )
-                    btn_row.operator(
-                        "mesh.create_alpha_wrap_collider",
-                        text=status_text,
-                        icon="TIME",
-                    )
-                    btn_row.operator(
-                        "mesh.restore_alpha_wrap_defaults",
-                        text="Restore Defaults",
-                        icon="FILE_REFRESH",
-                    )
-                else:
-                    btn_row.operator("mesh.create_alpha_wrap_collider", text="Create")
-                    btn_row.operator(
-                        "mesh.restore_alpha_wrap_defaults",
-                        text="Restore Defaults",
-                        icon="FILE_REFRESH",
-                    )
-
 
         elif scene.tab_option == "JOINTS":
             armature_object = get_armature()

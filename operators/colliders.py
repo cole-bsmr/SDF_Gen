@@ -8,9 +8,10 @@ import os
 import sys
 import tempfile
 import threading
+import subprocess
 import mathutils
 from ..operators.general_functions import show_message_box
-from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available
+from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available, get_blender_python_executable
 
 
 
@@ -630,6 +631,47 @@ def get_selected_mesh_objects():
     return meshes
 
 
+def get_alpha_wrap_targets():
+    """Returns mesh objects to process for alpha wrap.
+    If visual meshes are selected (or children of selection), returns them.
+    If only colliders are selected, resolves them back to their source visual mesh objects."""
+    selected_objs = get_selected_mesh_objects()
+    if selected_objs:
+        return selected_objs
+
+    resolved = []
+    seen = set()
+    for obj in bpy.context.selected_objects:
+        # Check stored source_visual custom property
+        source_name = obj.get("source_visual")
+        if source_name and source_name in bpy.data.objects:
+            src = bpy.data.objects[source_name]
+            if src.type == "MESH" and src not in seen:
+                seen.add(src)
+                resolved.append(src)
+                continue
+
+        # Check by name prefix (e.g. jaw_collider_alphawrap -> jaw)
+        obj_name_lower = obj.name.lower()
+        if "_collider" in obj_name_lower:
+            base_name = obj_name_lower.split("_collider")[0]
+            for candidate in bpy.data.objects:
+                if candidate.type != "MESH":
+                    continue
+                cand_is_collider = (
+                    getattr(candidate, "object_type", "") == "ColliderObject"
+                    or getattr(candidate, "collider_type", "NotCollider") != "NotCollider"
+                    or "_collider" in candidate.name.lower()
+                )
+                if not cand_is_collider and candidate.name.lower().replace(".", "") == base_name:
+                    if candidate not in seen:
+                        seen.add(candidate)
+                        resolved.append(candidate)
+                    break
+
+    return resolved
+
+
 def validate_selection():
     """Validates that there is at least one mesh in the current selection or its children."""
     if not bpy.context.selected_objects:
@@ -748,11 +790,21 @@ def setup_alpha_wrap_collider(
     if visual_obj:
         move_to_collection(visual_obj, collider_obj)
 
+    # Remove any existing collider with target_name to prevent duplicate .001 meshes
+    existing_obj = bpy.data.objects.get(target_name)
+    if existing_obj and existing_obj != collider_obj:
+        mesh_data = existing_obj.data
+        bpy.data.objects.remove(existing_obj, do_unlink=True)
+        if mesh_data and mesh_data.users == 0:
+            bpy.data.meshes.remove(mesh_data)
+
     # Set collider material and wireframe display
     SetColliderMaterial()
 
     # Set final collider name
     collider_obj.name = target_name
+    if visual_obj:
+        collider_obj["source_visual"] = visual_obj.name
 
     # Add the margin modifier
     add_margin_modifier()
@@ -780,108 +832,6 @@ def _cleanup_task_files(tasks):
                 except OSError:
                     pass
 
-
-def _alpha_wrap_worker(tasks, params, state):
-    """Background worker function executing heavy alpha-wrap processing."""
-    try:
-        total = len(tasks)
-        for i, task in enumerate(tasks):
-            state["current"] = i
-            state["status"] = (
-                f"Wrapping ({i + 1}/{total})..." if total > 1 else "Wrapping..."
-            )
-            alpha_wrap_mesh(
-                input_path=task["temp_in"],
-                output_path=task["temp_out"],
-                alpha=params["alpha"],
-                offset=params["offset"],
-                is_percentage=params["is_percentage"],
-                decimate_angle=params["decimate_angle"],
-                decimate_faces=params["decimate_faces"],
-            )
-            state["completed"] = i + 1
-    except Exception as e:
-        state["error"] = str(e)
-    finally:
-        state["is_done"] = True
-
-
-def _create_wrap_timer_callback(tasks, state):
-    """Creates a timer callback function to monitor and finalize alpha wrap on the main thread."""
-    last_status = [None]
-
-    def timer_callback():
-        wm = bpy.context.window_manager
-
-        # While worker thread is still computing in background
-        if not state.get("is_done", False):
-            current_status = state.get("status", "Wrapping...")
-            if wm and current_status != last_status[0]:
-                wm.alpha_wrap_status = current_status
-                last_status[0] = current_status
-                tag_redraw_view3d()
-            return 0.1
-
-        # Background computation finished - running on Main Thread
-        if wm:
-            wm.alpha_wrap_in_progress = False
-            wm.alpha_wrap_status = ""
-
-        err = state.get("error")
-        if err:
-            _cleanup_task_files(tasks)
-            show_message_box(
-                message=f"Alpha Wrap failed: {err}",
-                title="Error",
-                icon="ERROR",
-            )
-            tag_redraw_view3d()
-            return None
-
-        created_colliders = []
-        try:
-            for task in tasks:
-                temp_out = task["temp_out"]
-                visual_obj = bpy.data.objects.get(task["visual_obj_name"])
-
-                if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
-                    continue
-
-                collider_obj = import_stl_object(temp_out)
-                setup_alpha_wrap_collider(
-                    collider_obj=collider_obj,
-                    visual_obj=visual_obj,
-                    target_name=task["target_name"],
-                    decimate_angle=task.get("decimate_angle"),
-                )
-                created_colliders.append(collider_obj)
-
-            # Select newly created colliders
-            bpy.ops.object.select_all(action="DESELECT")
-            for c in created_colliders:
-                c.select_set(True)
-            if created_colliders:
-                bpy.context.view_layer.objects.active = created_colliders[0]
-
-            if hasattr(bpy.ops.ed, "undo_push"):
-                try:
-                    bpy.ops.ed.undo_push(message="Create Alpha Wrap Collider")
-                except Exception:
-                    pass
-
-        except Exception as e:
-            show_message_box(
-                message=f"Failed finalizing Alpha Wrap colliders: {str(e)}",
-                title="Error",
-                icon="ERROR",
-            )
-        finally:
-            _cleanup_task_files(tasks)
-
-        tag_redraw_view3d()
-        return None
-
-    return timer_callback
 
 
 def alpha_wrap_collider(
@@ -936,33 +886,135 @@ def alpha_wrap_collider(
 class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     bl_idname = "mesh.create_alpha_wrap_collider"
     bl_label = "Create Alpha Wrap Collider"
-    bl_description = "Generates a watertight, shrink-wrapped Alpha Wrap collision mesh from selected visual objects or their hierarchy asynchronously"
+    bl_description = "Generates a watertight, shrink-wrapped Alpha Wrap collision mesh from selected visual objects or their hierarchy"
     bl_options = {"REGISTER", "UNDO"}
+
+    def _on_mode_update(self, context):
+        if self.mode == "PERCENTAGE":
+            if abs(self.alpha - 0.02) < 1e-4:
+                self.alpha = 2.0
+            if abs(self.offset - 0.005) < 1e-4:
+                self.offset = 0.5
+        else:
+            if abs(self.alpha - 2.0) < 1e-4:
+                self.alpha = 0.02
+            if abs(self.offset - 0.5) < 1e-4:
+                self.offset = 0.005
+
+    alpha: bpy.props.FloatProperty(
+        name="Alpha",
+        description=(
+            "Probe ball radius / feature resolution: controls how tightly the wrap conforms to the surface.\n"
+            "Smaller values capture finer geometric details; larger values bridge holes and gaps.\n"
+            "Must be strictly positive (> 0)"
+        ),
+        default=2.0,
+        min=0.0001,
+        soft_min=0.0001,
+        precision=4,
+    )
+
+    offset: bpy.props.FloatProperty(
+        name="Offset",
+        description=(
+            "Offset distance: thickness added outward from the input surface.\n"
+            "Guarantees the collision wrap strictly encloses the visual mesh.\n"
+            "Must be strictly positive (> 0)"
+        ),
+        default=0.5,
+        min=0.0001,
+        soft_min=0.0001,
+        precision=4,
+    )
+
+    mode: bpy.props.EnumProperty(
+        name="Mode",
+        description="Coordinate units used for Alpha and Offset values",
+        items=[
+            (
+                "PERCENTAGE",
+                "Percentage",
+                "Values are calculated as a percentage of the bounding box diagonal",
+            ),
+            (
+                "ABSOLUTE",
+                "Absolute",
+                "Values are in absolute metric units (meters)",
+            ),
+        ],
+        default="PERCENTAGE",
+        update=_on_mode_update,
+    )
+
+    decimate_angle: bpy.props.FloatProperty(
+        name="Planar Angle",
+        description="Planar decimation angle limit in degrees (0 to disable)",
+        default=5.0,
+        min=0.0,
+        max=180.0,
+        precision=2,
+    )
+
+    decimate_faces: bpy.props.IntProperty(
+        name="Target Faces",
+        description="Target face count for Quadric Edge Collapse decimation (0 to disable)",
+        default=0,
+        min=0,
+    )
+
+    def invoke(self, context, event):
+        if not is_pymeshlab_available():
+            return bpy.ops.mesh.install_pymeshlab("INVOKE_DEFAULT")
+        scene = context.scene
+        if hasattr(scene, "alpha_wrap_alpha"):
+            self.alpha = scene.alpha_wrap_alpha
+        if hasattr(scene, "alpha_wrap_offset"):
+            self.offset = scene.alpha_wrap_offset
+        if hasattr(scene, "alpha_wrap_mode"):
+            self.mode = scene.alpha_wrap_mode
+        if hasattr(scene, "alpha_wrap_decimate_angle"):
+            self.decimate_angle = scene.alpha_wrap_decimate_angle
+        if hasattr(scene, "alpha_wrap_decimate_faces"):
+            self.decimate_faces = scene.alpha_wrap_decimate_faces
+        return self.execute(context)
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+
+        # Alpha input with inline validation
+        alpha_invalid = self.alpha <= 0.0
+        row = col.row()
+        if alpha_invalid:
+            row.alert = True
+        row.prop(self, "alpha")
+        if alpha_invalid:
+            warn = col.row()
+            warn.alert = True
+            warn.label(text="Alpha must be strictly positive (> 0)", icon="ERROR")
+
+        # Offset input with inline validation
+        offset_invalid = self.offset <= 0.0
+        row = col.row()
+        if offset_invalid:
+            row.alert = True
+        row.prop(self, "offset")
+        if offset_invalid:
+            warn = col.row()
+            warn.alert = True
+            warn.label(text="Offset must be strictly positive (> 0)", icon="ERROR")
+
+        col.prop(self, "mode")
+        col.prop(self, "decimate_angle")
+        col.prop(self, "decimate_faces")
 
     def execute(self, context):
         if not is_pymeshlab_available():
-            msg = (
-                "PyMeshLab is not installed in Blender's Python environment.\n"
-                "To enable Alpha Wrap, install PyMeshLab in Blender via:\n"
-                f"{sys.executable} -m pip install pymeshlab"
-            )
-            show_message_box(message=msg, title="PyMeshLab Missing", icon="ERROR")
-            self.report(
-                {"WARNING"},
-                "PyMeshLab is not installed in Blender's Python environment.",
-            )
+            bpy.ops.mesh.install_pymeshlab("INVOKE_DEFAULT")
             return {"CANCELLED"}
 
-        if context.window_manager.alpha_wrap_in_progress:
-            self.report(
-                {"WARNING"},
-                "Alpha wrap is already in progress.",
-            )
-            return {"CANCELLED"}
-
-        scene = context.scene
-        alpha = scene.alpha_wrap_alpha
-        offset = scene.alpha_wrap_offset
+        alpha = self.alpha
+        offset = self.offset
 
         if alpha <= 0.0 or offset <= 0.0:
             errors = []
@@ -983,27 +1035,11 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             self.report({"ERROR"}, error_message.replace("\n", " "))
             return {"CANCELLED"}
 
-        if not validate_selection():
+        if not bpy.context.selected_objects:
+            show_message_box(message="No object selected.", title="Error", icon="INFO")
             return {"CANCELLED"}
 
-        bpy.context.view_layer.active_layer_collection = (
-            bpy.context.view_layer.layer_collection
-        )
-
-        is_percentage = (scene.alpha_wrap_mode == "PERCENTAGE")
-        decimate_angle = (
-            scene.alpha_wrap_decimate_angle
-            if scene.alpha_wrap_decimate_angle > 0
-            else None
-        )
-        decimate_faces = (
-            scene.alpha_wrap_decimate_faces
-            if scene.alpha_wrap_decimate_faces > 0
-            else None
-        )
-        per_obj = scene.alpha_wrap_per_obj
-
-        selected_objs = get_selected_mesh_objects()
+        selected_objs = get_alpha_wrap_targets()
         if not selected_objs:
             show_message_box(
                 message="Selected object is not a mesh and has no mesh children.",
@@ -1012,53 +1048,51 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+        bpy.context.view_layer.active_layer_collection = (
+            bpy.context.view_layer.layer_collection
+        )
+
+        is_percentage = (self.mode == "PERCENTAGE")
+        decimate_angle = (
+            self.decimate_angle
+            if self.decimate_angle > 0
+            else None
+        )
+        decimate_faces = (
+            self.decimate_faces
+            if self.decimate_faces > 0
+            else None
+        )
+
+        # Keep scene properties in sync with operator adjustments
+        scene = context.scene
+        scene.alpha_wrap_mode = self.mode
+        scene.alpha_wrap_alpha = self.alpha
+        scene.alpha_wrap_offset = self.offset
+        scene.alpha_wrap_decimate_angle = self.decimate_angle
+        scene.alpha_wrap_decimate_faces = self.decimate_faces
+
         tasks = []
         try:
-            if not per_obj and len(selected_objs) > 1:
-                # Combine duplicates for wrapping into a single collider
-                bpy.ops.object.select_all(action="DESELECT")
-                for obj in selected_objs:
-                    obj.select_set(True)
-                bpy.context.view_layer.objects.active = selected_objs[0]
-                bpy.ops.object.duplicate(linked=False)
-                bpy.ops.object.join()
-                temp_joined = bpy.context.active_object
+            for visual_obj in selected_objs:
                 temp_in = tempfile.mktemp(suffix=".stl")
                 temp_out = tempfile.mktemp(suffix=".stl")
-                try:
-                    export_object_to_stl(temp_joined, temp_in)
-                finally:
-                    bpy.data.objects.remove(temp_joined, do_unlink=True)
-
+                export_object_to_stl(visual_obj, temp_in)
                 target_name = (
-                    (selected_objs[0].name + "_collider_alphawrap")
+                    (visual_obj.name + "_collider_alphawrap")
                     .lower()
                     .replace(".", "")
                 )
                 tasks.append({
                     "temp_in": temp_in,
                     "temp_out": temp_out,
-                    "visual_obj_name": selected_objs[0].name,
+                    "visual_obj_name": visual_obj.name,
                     "target_name": target_name,
                     "decimate_angle": decimate_angle,
                 })
-            else:
-                for visual_obj in selected_objs:
-                    temp_in = tempfile.mktemp(suffix=".stl")
-                    temp_out = tempfile.mktemp(suffix=".stl")
-                    export_object_to_stl(visual_obj, temp_in)
-                    target_name = (
-                        (visual_obj.name + "_collider_alphawrap")
-                        .lower()
-                        .replace(".", "")
-                    )
-                    tasks.append({
-                        "temp_in": temp_in,
-                        "temp_out": temp_out,
-                        "visual_obj_name": visual_obj.name,
-                        "target_name": target_name,
-                        "decimate_angle": decimate_angle,
-                    })
 
             # Restore original selection
             bpy.ops.object.select_all(action="DESELECT")
@@ -1075,46 +1109,59 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
-        wm = context.window_manager
-        wm.alpha_wrap_in_progress = True
-        initial_status = (
-            f"Wrapping (0/{len(tasks)})..." if len(tasks) > 1 else "Wrapping..."
-        )
-        wm.alpha_wrap_status = initial_status
+        created_colliders = []
+        try:
+            for task in tasks:
+                temp_in = task["temp_in"]
+                temp_out = task["temp_out"]
+                visual_obj = bpy.data.objects.get(task["visual_obj_name"])
 
-        params = {
-            "alpha": alpha,
-            "offset": offset,
-            "is_percentage": is_percentage,
-            "decimate_angle": decimate_angle,
-            "decimate_faces": decimate_faces,
-        }
-        state = {
-            "completed": 0,
-            "total": len(tasks),
-            "status": initial_status,
-            "error": None,
-            "is_done": False,
-        }
+                alpha_wrap_mesh(
+                    input_path=temp_in,
+                    output_path=temp_out,
+                    alpha=alpha,
+                    offset=offset,
+                    is_percentage=is_percentage,
+                    decimate_angle=decimate_angle,
+                    decimate_faces=decimate_faces,
+                )
 
-        # Start background worker thread
-        thread = threading.Thread(
-            target=_alpha_wrap_worker,
-            args=(tasks, params, state),
-            daemon=True,
-        )
-        thread.start()
+                if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
+                    continue
 
-        # Register non-blocking timer on main thread
-        timer_cb = _create_wrap_timer_callback(tasks, state)
-        bpy.app.timers.register(timer_cb, first_interval=0.05)
+                collider_obj = import_stl_object(temp_out)
+                setup_alpha_wrap_collider(
+                    collider_obj=collider_obj,
+                    visual_obj=visual_obj,
+                    target_name=task["target_name"],
+                    decimate_angle=task.get("decimate_angle"),
+                )
+                created_colliders.append(collider_obj)
 
-        tag_redraw_view3d()
-        self.report(
-            {"INFO"},
-            f"Alpha wrap started for {len(tasks)} mesh object(s) in background...",
-        )
-        return {"FINISHED"}
+            # Select newly created colliders
+            bpy.ops.object.select_all(action="DESELECT")
+            for c in created_colliders:
+                c.select_set(True)
+            if created_colliders:
+                bpy.context.view_layer.objects.active = created_colliders[0]
+
+            tag_redraw_view3d()
+            self.report(
+                {"INFO"},
+                f"Alpha wrap created {len(created_colliders)} collider(s).",
+            )
+            return {"FINISHED"}
+
+        except Exception as e:
+            show_message_box(
+                message=f"Alpha Wrap failed: {str(e)}",
+                title="Error",
+                icon="ERROR",
+            )
+            self.report({"ERROR"}, f"Alpha Wrap failed: {str(e)}")
+            return {"CANCELLED"}
+        finally:
+            _cleanup_task_files(tasks)
 
 
 class MESH_OT_restore_alpha_wrap_defaults(bpy.types.Operator):
@@ -1124,27 +1171,158 @@ class MESH_OT_restore_alpha_wrap_defaults(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        scene = context.scene
-
-        # Reset stored mode defaults
-        scene.alpha_wrap_alpha_percentage = 2.0
-        scene.alpha_wrap_offset_percentage = 0.5
-        scene.alpha_wrap_alpha_absolute = 0.02
-        scene.alpha_wrap_offset_absolute = 0.005
-
-        # Update active properties based on current mode
-        if scene.alpha_wrap_mode == "PERCENTAGE":
-            scene.alpha_wrap_alpha = 2.0
-            scene.alpha_wrap_offset = 0.5
-        else:
-            scene.alpha_wrap_alpha = 0.02
-            scene.alpha_wrap_offset = 0.005
-
-        scene.alpha_wrap_decimate_angle = 5.0
-        scene.alpha_wrap_decimate_faces = 0
-        scene.alpha_wrap_per_obj = True
-
         self.report({"INFO"}, "Alpha Wrap default parameters restored.")
+        return {"FINISHED"}
+
+
+def _install_pymeshlab_worker(state):
+    """Background worker thread to install PyMeshLab via pip."""
+    try:
+        python_exe = get_blender_python_executable()
+
+        cmd = [python_exe, "-m", "pip", "install", "pymeshlab"]
+        kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        res = subprocess.run(cmd, **kwargs)
+
+        # If system site-packages is read-only, retry with --user
+        if res.returncode != 0:
+            err_str = (res.stderr or "") + (res.stdout or "")
+            if "PermissionError" in err_str or "Access is denied" in err_str:
+                user_cmd = [python_exe, "-m", "pip", "install", "--user", "pymeshlab"]
+                res = subprocess.run(user_cmd, **kwargs)
+
+        if res.returncode != 0:
+            error_output = res.stderr.strip() or res.stdout.strip() or f"Process exited with code {res.returncode}"
+            state["error"] = error_output
+            state["success"] = False
+            return
+
+        # Ensure user site-packages is in sys.path if pip installed there
+        try:
+            import site
+            user_site = site.getusersitepackages()
+            if user_site and os.path.exists(user_site) and user_site not in sys.path:
+                sys.path.append(user_site)
+        except Exception:
+            pass
+
+        import importlib
+        importlib.invalidate_caches()
+
+        # Verify import succeeds
+        try:
+            import pymeshlab
+            state["success"] = True
+        except Exception as e:
+            state["error"] = f"PyMeshLab installed but could not be imported: {e}"
+            state["success"] = False
+
+    except Exception as e:
+        state["error"] = str(e)
+        state["success"] = False
+    finally:
+        state["is_done"] = True
+
+
+def _create_install_timer_callback(state):
+    """Timer callback function to monitor PyMeshLab installation on the main thread."""
+    def timer_callback():
+        wm = bpy.context.window_manager
+
+        if not state.get("is_done", False):
+            return 0.1
+
+        if wm:
+            wm.pymeshlab_installing = False
+            wm.pymeshlab_install_status = ""
+
+        tag_redraw_view3d()
+
+        if state.get("success", False):
+            show_message_box(
+                message="PyMeshLab was installed successfully!\nAlpha Wrap colliders are now available.",
+                title="Installation Complete",
+                icon="INFO",
+            )
+        else:
+            err = state.get("error", "Unknown error occurred.")
+            show_message_box(
+                message=f"Failed to install PyMeshLab:\n{err}",
+                title="Installation Failed",
+                icon="ERROR",
+            )
+
+        tag_redraw_view3d()
+        return None
+
+    return timer_callback
+
+
+class MESH_OT_install_pymeshlab(bpy.types.Operator):
+    bl_idname = "mesh.install_pymeshlab"
+    bl_label = "PyMeshLab Required"
+    bl_description = "Install PyMeshLab library into Blender's Python environment to enable Alpha Wrap colliders"
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    def invoke(self, context, event):
+        if getattr(context.window_manager, "pymeshlab_installing", False):
+            self.report({"WARNING"}, "PyMeshLab installation is already in progress.")
+            return {"CANCELLED"}
+
+        if is_pymeshlab_available():
+            self.report({"INFO"}, "PyMeshLab is already installed.")
+            return {"CANCELLED"}
+
+        return context.window_manager.invoke_props_dialog(self, width=420)
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(
+            text="PyMeshLab is required for alpha wrap collision generation.",
+            icon="INFO",
+        )
+        col.separator()
+        col.label(text="Would you like to install PyMeshLab?")
+
+    def execute(self, context):
+        wm = context.window_manager
+        if getattr(wm, "pymeshlab_installing", False):
+            self.report({"WARNING"}, "PyMeshLab installation is already in progress.")
+            return {"CANCELLED"}
+
+        if is_pymeshlab_available():
+            self.report({"INFO"}, "PyMeshLab is already installed.")
+            return {"CANCELLED"}
+
+        wm.pymeshlab_installing = True
+        wm.pymeshlab_install_status = "Installing PyMeshLab..."
+
+        state = {
+            "is_done": False,
+            "success": False,
+            "error": None,
+        }
+
+        thread = threading.Thread(
+            target=_install_pymeshlab_worker,
+            args=(state,),
+            daemon=True,
+        )
+        thread.start()
+
+        timer_cb = _create_install_timer_callback(state)
+        bpy.app.timers.register(timer_cb, first_interval=0.1)
+
+        tag_redraw_view3d()
+        self.report({"INFO"}, "PyMeshLab installation started in background...")
         return {"FINISHED"}
 
 
