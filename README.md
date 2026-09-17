@@ -121,7 +121,6 @@ Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geomet
 * **`Planar Angle`**: Dihedral angle limit in degrees using Blender's built-in Decimate Planar modifier to cleanly dissolve flat coplanar faces without generating overlapping or duplicate geometry (set to `0` to disable).
 * **`Target Faces`**: Optional target face count simplification using Quadric Edge Collapse (set to `0` to disable).
 * **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider (default: off, i.e. one collider for the whole selection).
-* **`Restore Defaults`**: Resets all Alpha Wrap parameters back to their recommended default values for the active mode.
 
 ### Transform
 Colliders will often need to be adjusted to properly fit the underlying visual objects. Use these tools to manually adjust the colliders.
