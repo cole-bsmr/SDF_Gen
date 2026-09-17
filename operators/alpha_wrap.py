@@ -159,6 +159,14 @@ def alpha_wrap_mesh(
     ms.load_new_mesh(input_path)
 
     initial_stats = get_mesh_stats(ms)
+    diagonal = initial_stats.get("diagonal", 0.0)
+
+    if is_percentage:
+        alpha = max(alpha, 0.5)
+        offset = max(offset, 0.01)
+    elif diagonal > 0.0:
+        alpha = max(alpha, diagonal * 0.005)
+        offset = max(offset, diagonal * 0.0001)
 
     alpha_param = _make_filter_value(pm, alpha, is_percentage)
     offset_param = _make_filter_value(pm, offset, is_percentage)

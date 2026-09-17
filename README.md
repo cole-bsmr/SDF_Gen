@@ -114,13 +114,13 @@ Creates a convex hull mesh collider. This method is less efficient but provides 
 * Adjust the **`Mesh Margin`** slider to ensure all parts of the visual object are contained within the collider as mesh resolution is lowered.
 
 ### Alpha Wrap Collider
-Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geometry. It runs asynchronously in the background so Blender remains responsive during computation.
-* **`Alpha`**: Size of the probe ball / feature resolution (must be > 0). In percentage mode, this is a percentage of the bounding box diagonal (default: `2.0%`). In absolute mode, this is in meters (default: `0.02m`). Smaller values capture finer features but increase computation time significantly (halving Alpha roughly increases runtime by 3x to 8x as spatial cell counts scale between `1 / alpha^2` and `1 / alpha^3`).
-* **`Offset`**: Surface offset / expansion distance added to the wrapped mesh (must be > 0). Default: `0.5%` (percentage mode) or `0.005m` (absolute mode).
-* **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters). Switching between modes preserves the last entered values for each mode.
+Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geometry.
+* **`Alpha`**: Size of the probe ball / feature resolution (minimum `0.5%` of bounding box diagonal). In percentage mode, this is a percentage of the bounding box diagonal (default: `2.0%`). In absolute mode, this is in meters, seeded with `2.0%` of the bounding box diagonal of the current selection every time the operator is started. Smaller values capture finer features but increase computation time significantly (halving Alpha roughly increases runtime by 3x to 8x as spatial cell counts scale between `1 / alpha^2` and `1 / alpha^3`).
+* **`Offset`**: Surface offset / expansion distance added to the wrapped mesh (minimum `0.01%` of bounding box diagonal). Default: `0.5%` of the bounding box diagonal, in percent or in meters depending on the mode.
+* **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters). Switching between modes preserves the last entered values for each mode; the absolute values are only re-derived from the bounding box when the operator is started anew.
 * **`Planar Angle`**: Dihedral angle limit in degrees using Blender's built-in Decimate Planar modifier to cleanly dissolve flat coplanar faces without generating overlapping or duplicate geometry (set to `0` to disable).
 * **`Target Faces`**: Optional target face count simplification using Quadric Edge Collapse (set to `0` to disable).
-* **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider.
+* **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider (default: off, i.e. one collider for the whole selection).
 * **`Restore Defaults`**: Resets all Alpha Wrap parameters back to their recommended default values for the active mode.
 
 ### Transform

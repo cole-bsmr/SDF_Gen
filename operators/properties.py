@@ -412,7 +412,9 @@ bpy.types.Scene.alpha_wrap_alpha_percentage = bpy.props.FloatProperty(
     name="Alpha (Percentage)",
     description="Stored Alpha value for Percentage mode",
     default=DEFAULT_ALPHA_PERCENTAGE,
-    soft_min=0.0001,
+    min=0.5,
+    soft_min=0.5,
+    max=100.0,
     precision=4,
 )
 
@@ -420,7 +422,9 @@ bpy.types.Scene.alpha_wrap_offset_percentage = bpy.props.FloatProperty(
     name="Offset (Percentage)",
     description="Stored Offset value for Percentage mode",
     default=DEFAULT_OFFSET_PERCENTAGE,
-    soft_min=0.0001,
+    min=0.01,
+    soft_min=0.01,
+    max=100.0,
     precision=4,
 )
 
@@ -449,7 +453,7 @@ bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
         "Performance: computation duration scales sharply with smaller Alpha (~3x-8x longer when halved),\n"
         "as 3D spatial cell and facet counts scale with (1 / Alpha^2) to (1 / Alpha^3).\n"
         "Values between 1.0% and 3.0% provide an optimal balance of speed and fidelity.\n"
-        "Must be strictly positive (> 0) as required by CGAL 3D Alpha Wrapping.\n"
+        "Minimum allowed value is 0.5% of bounding box diagonal.\n"
         "Expressed as % of bounding box diagonal (Percentage mode, default: 2.0%) or meters (Absolute mode, default: 0.02m)"
     ),
     default=DEFAULT_ALPHA_PERCENTAGE,
@@ -464,7 +468,7 @@ bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
         "Offset distance: thickness added outward from the input surface.\n"
         "Guarantees the collision wrap strictly encloses the visual mesh with at least this margin.\n"
         "Also thickens thin walls and non-manifold geometry into a solid watertight volume.\n"
-        "Must be strictly positive (> 0) as required by CGAL 3D Alpha Wrapping.\n"
+        "Minimum allowed value is 0.01% of bounding box diagonal.\n"
         "Expressed as % of bounding box diagonal (Percentage mode, default: 0.5%) or meters (Absolute mode, default: 0.005m)"
     ),
     default=DEFAULT_OFFSET_PERCENTAGE,
@@ -518,6 +522,12 @@ bpy.types.Scene.alpha_wrap_decimate_faces = bpy.props.IntProperty(
     ),
     default=0,
     min=0,
+)
+
+bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
+    name="Per Object",
+    description="Toggle for multiple selection behavior.",
+    default=False,
 )
 
 # Alpha Wrap Async State

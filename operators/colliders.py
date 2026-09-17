@@ -12,6 +12,12 @@ import subprocess
 import mathutils
 from ..operators.general_functions import show_message_box
 from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available, get_blender_python_executable
+from .properties import (
+    DEFAULT_ALPHA_ABSOLUTE,
+    DEFAULT_ALPHA_PERCENTAGE,
+    DEFAULT_OFFSET_ABSOLUTE,
+    DEFAULT_OFFSET_PERCENTAGE,
+)
 
 
 
@@ -642,6 +648,20 @@ def get_alpha_wrap_targets():
     resolved = []
     seen = set()
     for obj in bpy.context.selected_objects:
+        # Check stored source_visuals list property (for joined colliders)
+        source_names = obj.get("source_visuals")
+        if source_names:
+            found_any = False
+            for sname in source_names:
+                if sname in bpy.data.objects:
+                    src = bpy.data.objects[sname]
+                    if src.type == "MESH" and src not in seen:
+                        seen.add(src)
+                        resolved.append(src)
+                        found_any = True
+            if found_any:
+                continue
+
         # Check stored source_visual custom property
         source_name = obj.get("source_visual")
         if source_name and source_name in bpy.data.objects:
@@ -767,6 +787,7 @@ def setup_alpha_wrap_collider(
     visual_obj,
     target_name,
     decimate_angle=None,
+    source_visual_names=None,
 ):
     """Configures and positions an imported STL object as an Alpha Wrap collider."""
     bpy.context.view_layer.objects.active = collider_obj
@@ -805,6 +826,8 @@ def setup_alpha_wrap_collider(
     collider_obj.name = target_name
     if visual_obj:
         collider_obj["source_visual"] = visual_obj.name
+    if source_visual_names:
+        collider_obj["source_visuals"] = list(source_visual_names)
 
     # Add the margin modifier
     add_margin_modifier()
@@ -883,34 +906,165 @@ def alpha_wrap_collider(
                     pass
 
 
+MIN_ALPHA_PERCENTAGE = 0.5
+MIN_OFFSET_PERCENTAGE = 0.01
+# Percentages refer to the bounding box diagonal, so values above 100% are meaningless.
+MAX_PERCENTAGE = 100.0
+
+
+def _get_object_world_bbox_diagonal(obj) -> float:
+    """Computes the world-space axis-aligned bounding box diagonal of a mesh object."""
+    try:
+        if obj.type == "MESH" and obj.data and len(obj.data.vertices) > 0:
+            n_verts = len(obj.data.vertices)
+            coords = np.empty(n_verts * 3, dtype=np.float64)
+            obj.data.vertices.foreach_get("co", coords)
+            coords = coords.reshape(-1, 3)
+            mat = np.array(obj.matrix_world, dtype=np.float64)
+            world_coords = coords @ mat[:3, :3].T + mat[:3, 3]
+            extents = world_coords.max(axis=0) - world_coords.min(axis=0)
+            return float(np.linalg.norm(extents))
+        corners = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
+        pts = np.array([[c.x, c.y, c.z] for c in corners], dtype=np.float64)
+        extents = pts.max(axis=0) - pts.min(axis=0)
+        return float(np.linalg.norm(extents))
+    except Exception:
+        return 1.0
+
+
+def _get_combined_world_bbox_diagonal(objs) -> float:
+    """Computes the combined world-space axis-aligned bounding box diagonal of multiple objects."""
+    if not objs:
+        return 1.0
+    all_mins = []
+    all_maxs = []
+    for obj in objs:
+        try:
+            if obj.type == "MESH" and obj.data and len(obj.data.vertices) > 0:
+                n_verts = len(obj.data.vertices)
+                coords = np.empty(n_verts * 3, dtype=np.float64)
+                obj.data.vertices.foreach_get("co", coords)
+                coords = coords.reshape(-1, 3)
+                mat = np.array(obj.matrix_world, dtype=np.float64)
+                world_coords = coords @ mat[:3, :3].T + mat[:3, 3]
+                all_mins.append(world_coords.min(axis=0))
+                all_maxs.append(world_coords.max(axis=0))
+            else:
+                corners = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
+                pts = np.array([[c.x, c.y, c.z] for c in corners], dtype=np.float64)
+                all_mins.append(pts.min(axis=0))
+                all_maxs.append(pts.max(axis=0))
+        except Exception:
+            pass
+    if not all_mins:
+        return 1.0
+    global_min = np.min(all_mins, axis=0)
+    global_max = np.max(all_maxs, axis=0)
+    return float(np.linalg.norm(global_max - global_min))
+
+
+def get_alpha_wrap_bbox_diagonal(per_obj: bool, target_objs=None) -> float:
+    """Returns the world-space bounding box diagonal the Alpha Wrap values relate to.
+
+    With per_obj disabled all targets are wrapped as one mesh, so their combined
+    bounding box applies. Otherwise every target is wrapped on its own and the largest
+    one is decisive, because it is the object for which a given Alpha resolves into the
+    highest number of spatial cells.
+    """
+    if target_objs is None:
+        target_objs = get_alpha_wrap_targets()
+
+    # Object world matrices are evaluated by the dependency graph. Every Redo panel
+    # re-run is preceded by an undo step, after which the matrices can still be stale
+    # and lack transforms inherited from parents. Measuring them in that state yields a
+    # bounding box in the unit scale of the raw mesh data (e.g. millimetres for CAD
+    # imports parented under a scaled empty), so the graph must be flushed first.
+    bpy.context.view_layer.update()
+
+    if not target_objs:
+        return 1.0
+    if not per_obj and len(target_objs) > 1:
+        diag = _get_combined_world_bbox_diagonal(target_objs)
+    else:
+        diags = [_get_object_world_bbox_diagonal(o) for o in target_objs]
+        diag = max(diags) if diags else 1.0
+
+    return diag if diag > 0.0 else 1.0
+
+
+def get_alpha_wrap_min_values(mode: str, per_obj: bool, target_objs=None):
+    """Returns (min_alpha, min_offset) for the given mode and target objects."""
+    if mode == "PERCENTAGE":
+        return MIN_ALPHA_PERCENTAGE, MIN_OFFSET_PERCENTAGE
+
+    diag = get_alpha_wrap_bbox_diagonal(per_obj, target_objs)
+    min_alpha = diag * (MIN_ALPHA_PERCENTAGE / 100.0)
+    min_offset = diag * (MIN_OFFSET_PERCENTAGE / 100.0)
+    return min_alpha, min_offset
+
+
+def get_seeded_absolute_values(per_obj: bool, target_objs=None):
+    """Returns the (alpha, offset) an absolute mode session should start with.
+
+    An absolute length is only meaningful for the object it was measured on, so the
+    values are derived from the current targets, using the same ratios as the
+    percentage mode defaults.
+    """
+    diag = get_alpha_wrap_bbox_diagonal(per_obj, target_objs)
+    return (
+        diag * (DEFAULT_ALPHA_PERCENTAGE / 100.0),
+        diag * (DEFAULT_OFFSET_PERCENTAGE / 100.0),
+    )
+
+
 class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     bl_idname = "mesh.create_alpha_wrap_collider"
     bl_label = "Create Alpha Wrap Collider"
     bl_description = "Generates a watertight, shrink-wrapped Alpha Wrap collision mesh from selected visual objects or their hierarchy"
     bl_options = {"REGISTER", "UNDO"}
 
-    def _on_mode_update(self, context):
-        if self.mode == "PERCENTAGE":
-            if abs(self.alpha - 0.02) < 1e-4:
-                self.alpha = 2.0
-            if abs(self.offset - 0.005) < 1e-4:
-                self.offset = 0.5
-        else:
-            if abs(self.alpha - 2.0) < 1e-4:
-                self.alpha = 0.02
-            if abs(self.offset - 0.5) < 1e-4:
-                self.offset = 0.005
+    # Mode active during the previous execution. Used to detect a mode switch so the
+    # values remembered for the newly selected mode can be restored. Must persist
+    # across Redo panel re-runs, so it must not use SKIP_SAVE.
+    prev_mode: bpy.props.StringProperty(
+        default="",
+        options={"HIDDEN"},
+    )
+
+    # Last Alpha and Offset entered for each mode, restored when the user switches
+    # back to that mode. This memory lives on the operator and not on the scene,
+    # because every Redo panel re-run is preceded by an undo, which restores the scene
+    # and would roll scene-held values back to their state before the first run.
+    alpha_memory_percentage: bpy.props.FloatProperty(
+        default=DEFAULT_ALPHA_PERCENTAGE,
+        options={"HIDDEN"},
+    )
+
+    offset_memory_percentage: bpy.props.FloatProperty(
+        default=DEFAULT_OFFSET_PERCENTAGE,
+        options={"HIDDEN"},
+    )
+
+    alpha_memory_absolute: bpy.props.FloatProperty(
+        default=DEFAULT_ALPHA_ABSOLUTE,
+        options={"HIDDEN"},
+    )
+
+    offset_memory_absolute: bpy.props.FloatProperty(
+        default=DEFAULT_OFFSET_ABSOLUTE,
+        options={"HIDDEN"},
+    )
 
     alpha: bpy.props.FloatProperty(
         name="Alpha",
         description=(
             "Probe ball radius / feature resolution: controls how tightly the wrap conforms to the surface.\n"
             "Smaller values capture finer geometric details; larger values bridge holes and gaps.\n"
-            "Must be strictly positive (> 0)"
+            "Clamped to a minimum of 0.5% of the bounding box diagonal"
         ),
         default=2.0,
-        min=0.0001,
-        soft_min=0.0001,
+        min=1e-6,
+        soft_min=1e-6,
         precision=4,
     )
 
@@ -919,11 +1073,11 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         description=(
             "Offset distance: thickness added outward from the input surface.\n"
             "Guarantees the collision wrap strictly encloses the visual mesh.\n"
-            "Must be strictly positive (> 0)"
+            "Clamped to a minimum of 0.01% of the bounding box diagonal"
         ),
         default=0.5,
-        min=0.0001,
-        soft_min=0.0001,
+        min=1e-6,
+        soft_min=1e-6,
         precision=4,
     )
 
@@ -943,7 +1097,6 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             ),
         ],
         default="PERCENTAGE",
-        update=_on_mode_update,
     )
 
     decimate_angle: bpy.props.FloatProperty(
@@ -962,77 +1115,60 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         min=0,
     )
 
+    per_obj: bpy.props.BoolProperty(
+        name="Per Object",
+        description="Toggle for multiple selection behavior.",
+        default=False,
+    )
+
     def invoke(self, context, event):
         if not is_pymeshlab_available():
             return bpy.ops.mesh.install_pymeshlab("INVOKE_DEFAULT")
         scene = context.scene
+        if hasattr(scene, "alpha_wrap_mode"):
+            self.mode = scene.alpha_wrap_mode
+            self.prev_mode = scene.alpha_wrap_mode
+        if hasattr(scene, "alpha_wrap_per_obj"):
+            self.per_obj = scene.alpha_wrap_per_obj
         if hasattr(scene, "alpha_wrap_alpha"):
             self.alpha = scene.alpha_wrap_alpha
         if hasattr(scene, "alpha_wrap_offset"):
             self.offset = scene.alpha_wrap_offset
-        if hasattr(scene, "alpha_wrap_mode"):
-            self.mode = scene.alpha_wrap_mode
         if hasattr(scene, "alpha_wrap_decimate_angle"):
             self.decimate_angle = scene.alpha_wrap_decimate_angle
         if hasattr(scene, "alpha_wrap_decimate_faces"):
             self.decimate_faces = scene.alpha_wrap_decimate_faces
+
+        # Percentage values are independent of the object size and are carried over from
+        # the last session. Absolute values are only meaningful for the object they were
+        # derived from, so they are re-seeded from the current selection whenever the
+        # operator is started anew. Mode switches within a run deliberately keep whatever
+        # the user dialled in.
+        self.alpha_memory_percentage = scene.alpha_wrap_alpha_percentage
+        self.offset_memory_percentage = scene.alpha_wrap_offset_percentage
+        self.alpha_memory_absolute, self.offset_memory_absolute = (
+            get_seeded_absolute_values(self.per_obj)
+        )
+        if self.mode == "ABSOLUTE":
+            self.alpha = self.alpha_memory_absolute
+            self.offset = self.offset_memory_absolute
+
         return self.execute(context)
 
     def draw(self, context):
         layout = self.layout
         col = layout.column()
 
-        # Alpha input with inline validation
-        alpha_invalid = self.alpha <= 0.0
-        row = col.row()
-        if alpha_invalid:
-            row.alert = True
-        row.prop(self, "alpha")
-        if alpha_invalid:
-            warn = col.row()
-            warn.alert = True
-            warn.label(text="Alpha must be strictly positive (> 0)", icon="ERROR")
-
-        # Offset input with inline validation
-        offset_invalid = self.offset <= 0.0
-        row = col.row()
-        if offset_invalid:
-            row.alert = True
-        row.prop(self, "offset")
-        if offset_invalid:
-            warn = col.row()
-            warn.alert = True
-            warn.label(text="Offset must be strictly positive (> 0)", icon="ERROR")
-
+        col.prop(self, "alpha")
+        col.prop(self, "offset")
         col.prop(self, "mode")
         col.prop(self, "decimate_angle")
         col.prop(self, "decimate_faces")
+        col.prop(self, "per_obj")
 
     def execute(self, context):
         if not is_pymeshlab_available():
             bpy.ops.mesh.install_pymeshlab("INVOKE_DEFAULT")
-            return {"CANCELLED"}
-
-        alpha = self.alpha
-        offset = self.offset
-
-        if alpha <= 0.0 or offset <= 0.0:
-            errors = []
-            if alpha <= 0.0:
-                errors.append(
-                    f"Alpha must be strictly positive (> 0), but is set to {alpha:.4g}."
-                )
-            if offset <= 0.0:
-                errors.append(
-                    f"Offset must be strictly positive (> 0), but is set to {offset:.4g}."
-                )
-            error_message = "\n".join(errors)
-            show_message_box(
-                message=error_message,
-                title="Invalid Alpha Wrap Parameters",
-                icon="ERROR",
-            )
-            self.report({"ERROR"}, error_message.replace("\n", " "))
             return {"CANCELLED"}
 
         if not bpy.context.selected_objects:
@@ -1047,6 +1183,45 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                 icon="INFO",
             )
             return {"CANCELLED"}
+
+        scene = context.scene
+
+        # A mode switch keeps the values previously entered for the newly selected mode
+        # instead of converting the current value, which would otherwise drift on every
+        # Redo panel re-run.
+        if self.prev_mode and self.prev_mode != self.mode:
+            if self.mode == "PERCENTAGE":
+                self.alpha = self.alpha_memory_percentage
+                self.offset = self.offset_memory_percentage
+            else:
+                self.alpha = self.alpha_memory_absolute
+                self.offset = self.offset_memory_absolute
+        self.prev_mode = self.mode
+
+        min_alpha, min_offset = get_alpha_wrap_min_values(
+            self.mode, self.per_obj, selected_objs
+        )
+        if self.alpha < min_alpha:
+            self.alpha = min_alpha
+        if self.offset < min_offset:
+            self.offset = min_offset
+
+        # In percentage mode the values cannot exceed the full bounding box diagonal.
+        if self.mode == "PERCENTAGE":
+            self.alpha = min(self.alpha, MAX_PERCENTAGE)
+            self.offset = min(self.offset, MAX_PERCENTAGE)
+
+        # Remember the values of the active mode, so switching away and back restores
+        # them instead of the defaults.
+        if self.mode == "PERCENTAGE":
+            self.alpha_memory_percentage = self.alpha
+            self.offset_memory_percentage = self.offset
+        else:
+            self.alpha_memory_absolute = self.alpha
+            self.offset_memory_absolute = self.offset
+
+        alpha = self.alpha
+        offset = self.offset
 
         if bpy.context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
@@ -1067,9 +1242,10 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
             else None
         )
 
-        # Keep scene properties in sync with operator adjustments
-        scene = context.scene
+        # Keep scene properties in sync with operator adjustments. The mode must be set
+        # first so the per-mode memory properties receive the values of the active mode.
         scene.alpha_wrap_mode = self.mode
+        scene.alpha_wrap_per_obj = self.per_obj
         scene.alpha_wrap_alpha = self.alpha
         scene.alpha_wrap_offset = self.offset
         scene.alpha_wrap_decimate_angle = self.decimate_angle
@@ -1077,22 +1253,69 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
 
         tasks = []
         try:
-            for visual_obj in selected_objs:
+            if not self.per_obj and len(selected_objs) > 1:
+                # Combine duplicates for wrapping into a single collider
+                bpy.ops.object.select_all(action="DESELECT")
+                for obj in selected_objs:
+                    obj.select_set(True)
+                bpy.context.view_layer.objects.active = selected_objs[0]
+                bpy.ops.object.duplicate(linked=False)
+                bpy.ops.object.join()
+                temp_joined = bpy.context.active_object
                 temp_in = tempfile.mktemp(suffix=".stl")
                 temp_out = tempfile.mktemp(suffix=".stl")
-                export_object_to_stl(visual_obj, temp_in)
+                try:
+                    export_object_to_stl(temp_joined, temp_in)
+                finally:
+                    mesh_data = temp_joined.data
+                    bpy.data.objects.remove(temp_joined, do_unlink=True)
+                    if mesh_data and mesh_data.users == 0:
+                        bpy.data.meshes.remove(mesh_data)
+
                 target_name = (
-                    (visual_obj.name + "_collider_alphawrap")
+                    (selected_objs[0].name + "_collider_alphawrap")
                     .lower()
                     .replace(".", "")
                 )
                 tasks.append({
                     "temp_in": temp_in,
                     "temp_out": temp_out,
-                    "visual_obj_name": visual_obj.name,
+                    "visual_obj_name": selected_objs[0].name,
+                    "source_visual_names": [obj.name for obj in selected_objs],
                     "target_name": target_name,
                     "decimate_angle": decimate_angle,
                 })
+                # Remove any leftover individual colliders from other objects in selected_objs
+                for other_obj in selected_objs[1:]:
+                    other_col_name = (
+                        (other_obj.name + "_collider_alphawrap")
+                        .lower()
+                        .replace(".", "")
+                    )
+                    existing_other = bpy.data.objects.get(other_col_name)
+                    if existing_other:
+                        other_mesh = existing_other.data
+                        bpy.data.objects.remove(existing_other, do_unlink=True)
+                        if other_mesh and other_mesh.users == 0:
+                            bpy.data.meshes.remove(other_mesh)
+            else:
+                for visual_obj in selected_objs:
+                    temp_in = tempfile.mktemp(suffix=".stl")
+                    temp_out = tempfile.mktemp(suffix=".stl")
+                    export_object_to_stl(visual_obj, temp_in)
+                    target_name = (
+                        (visual_obj.name + "_collider_alphawrap")
+                        .lower()
+                        .replace(".", "")
+                    )
+                    tasks.append({
+                        "temp_in": temp_in,
+                        "temp_out": temp_out,
+                        "visual_obj_name": visual_obj.name,
+                        "source_visual_names": [visual_obj.name],
+                        "target_name": target_name,
+                        "decimate_angle": decimate_angle,
+                    })
 
             # Restore original selection
             bpy.ops.object.select_all(action="DESELECT")
@@ -1135,6 +1358,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                     visual_obj=visual_obj,
                     target_name=task["target_name"],
                     decimate_angle=task.get("decimate_angle"),
+                    source_visual_names=task.get("source_visual_names"),
                 )
                 created_colliders.append(collider_obj)
 
