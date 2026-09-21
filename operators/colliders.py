@@ -10,6 +10,8 @@ import tempfile
 import threading
 import subprocess
 import mathutils
+import hashlib
+import shutil
 from ..operators.general_functions import show_message_box
 from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available, get_blender_python_executable
 from .properties import (
@@ -20,7 +22,25 @@ from .properties import (
 )
 
 
+def _get_selected_colliders_poly_count(context) -> int:
+    """Computes total evaluated polygon count for selected collider objects or active collider."""
+    try:
+        dg = context.evaluated_depsgraph_get()
+        colliders = [
+            obj for obj in context.selected_objects
+            if getattr(obj, "object_type", "") == "ColliderObject" and obj.type == "MESH"
+        ]
+        if not colliders and context.active_object:
+            if getattr(context.active_object, "object_type", "") == "ColliderObject" and context.active_object.type == "MESH":
+                colliders = [context.active_object]
 
+        total = 0
+        for col_obj in colliders:
+            eval_obj = col_obj.evaluated_get(dg)
+            total += len(eval_obj.data.polygons)
+        return total
+    except Exception:
+        return 0
 
 
 
@@ -78,15 +98,17 @@ class MESH_OT_add_collider(bpy.types.Operator):
 
     mesh_inflate: bpy.props.FloatProperty(
         name="Mesh Margin",
-        description="Inflate the collision geometry to account for lower mesh resolution.",
-        default=0,
-        min=0,
-        max=1,
-        step=0.1,
+        description="Inflate the collision geometry to account for lower mesh resolution (in mm).",
+        default=0.0,
+        min=0.0,
+        soft_max=10.0,
+        step=10,
     )  # type: ignore
 
     def invoke(self, context, event):
         self.plane_flip = False
+        self.mesh_resolution = 1.0
+        self.mesh_inflate = 0.0
         return self.execute(context)
 
     def draw(self, context):
@@ -105,6 +127,8 @@ class MESH_OT_add_collider(bpy.types.Operator):
         if self.shape_type == "Mesh":
             layout.prop(self, "mesh_resolution")
             layout.prop(self, "mesh_inflate")
+            poly_count = _get_selected_colliders_poly_count(context)
+            layout.label(text=f"Polygons: {poly_count:,}")
 
     def execute(self, context):
         if not validate_selection():
@@ -447,9 +471,10 @@ def mesh_collider(visual_obj, mesh_resolution, mesh_inflate):
     cm_mod.offset = 1.0
     cm_mod.use_rim_only = True
     cm_mod.use_even_offset = True
-    cm_mod.thickness = 0.00
-    # Set mesh margin property so it can be controlled via menu
-    bpy.context.active_object.modifiers["Mesh Collider Margin"].thickness = mesh_inflate
+    # Set mesh margin property so it can be controlled via menu (1 = 1mm)
+    bpy.context.active_object.modifiers["Mesh Collider Margin"].thickness = (
+        mesh_inflate * 0.001
+    )
 
 
 def obj_rotating_calipers_full(obj, DEBUG=False):
@@ -786,16 +811,18 @@ def setup_alpha_wrap_collider(
     collider_obj,
     visual_obj,
     target_name,
-    decimate_angle=None,
+    mesh_resolution=1.0,
     source_visual_names=None,
 ):
     """Configures and positions an imported STL object as an Alpha Wrap collider."""
     bpy.context.view_layer.objects.active = collider_obj
     bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
 
-    # Apply planar angle decimation using Blender's built-in Decimate -> Planar algorithm
-    if decimate_angle is not None and decimate_angle > 0.0:
-        apply_planar_decimate_modifier(collider_obj, decimate_angle)
+    # Add decimate modifier for mesh collider polygon count reduction
+    cm_mod = collider_obj.modifiers.new(
+        name="Mesh Collider Resolution", type="DECIMATE"
+    )
+    cm_mod.ratio = mesh_resolution
 
     collider_obj.object_type = "ColliderObject"
     collider_obj.collider_type = "MeshCollider"
@@ -862,8 +889,7 @@ def alpha_wrap_collider(
     alpha,
     offset,
     is_percentage,
-    decimate_angle,
-    decimate_faces,
+    mesh_resolution=1.0,
 ):
     """Synchronously creates a new alpha-wrapped collision mesh object from visual_obj."""
     temp_in = tempfile.mktemp(suffix=".stl")
@@ -877,8 +903,6 @@ def alpha_wrap_collider(
             alpha=alpha,
             offset=offset,
             is_percentage=is_percentage,
-            decimate_angle=decimate_angle,
-            decimate_faces=decimate_faces,
         )
         if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
             raise RuntimeError("Alpha wrap produced an empty or missing output mesh.")
@@ -893,7 +917,7 @@ def alpha_wrap_collider(
             collider_obj=collider_obj,
             visual_obj=visual_obj,
             target_name=target_name,
-            decimate_angle=decimate_angle,
+            mesh_resolution=mesh_resolution,
         )
         return collider_obj
 
@@ -1017,6 +1041,10 @@ def get_seeded_absolute_values(per_obj: bool, target_objs=None):
     )
 
 
+_last_alpha_wrap_mode = None
+_last_alpha_wrap_per_obj = None
+
+
 class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     bl_idname = "mesh.create_alpha_wrap_collider"
     bl_label = "Create Alpha Wrap Collider"
@@ -1099,20 +1127,13 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         default="PERCENTAGE",
     )
 
-    decimate_angle: bpy.props.FloatProperty(
-        name="Planar Angle",
-        description="Planar decimation angle limit in degrees (0 to disable)",
-        default=5.0,
+    mesh_resolution: bpy.props.FloatProperty(
+        name="Mesh Resolution",
+        description="Control the resolution of the mesh collider.",
+        default=1.0,
         min=0.0,
-        max=180.0,
-        precision=2,
-    )
-
-    decimate_faces: bpy.props.IntProperty(
-        name="Target Faces",
-        description="Target face count for Quadric Edge Collapse decimation (0 to disable)",
-        default=0,
-        min=0,
+        max=1.0,
+        step=0.1,
     )
 
     per_obj: bpy.props.BoolProperty(
@@ -1122,36 +1143,26 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     )
 
     def invoke(self, context, event):
+        global _last_alpha_wrap_mode, _last_alpha_wrap_per_obj
         if not is_pymeshlab_available():
             return bpy.ops.mesh.install_pymeshlab("INVOKE_DEFAULT")
-        scene = context.scene
-        if hasattr(scene, "alpha_wrap_mode"):
-            self.mode = scene.alpha_wrap_mode
-            self.prev_mode = scene.alpha_wrap_mode
-        if hasattr(scene, "alpha_wrap_per_obj"):
-            self.per_obj = scene.alpha_wrap_per_obj
-        if hasattr(scene, "alpha_wrap_alpha"):
-            self.alpha = scene.alpha_wrap_alpha
-        if hasattr(scene, "alpha_wrap_offset"):
-            self.offset = scene.alpha_wrap_offset
-        if hasattr(scene, "alpha_wrap_decimate_angle"):
-            self.decimate_angle = scene.alpha_wrap_decimate_angle
-        if hasattr(scene, "alpha_wrap_decimate_faces"):
-            self.decimate_faces = scene.alpha_wrap_decimate_faces
 
-        # Percentage values are independent of the object size and are carried over from
-        # the last session. Absolute values are only meaningful for the object they were
-        # derived from, so they are re-seeded from the current selection whenever the
-        # operator is started anew. Mode switches within a run deliberately keep whatever
-        # the user dialled in.
-        self.alpha_memory_percentage = scene.alpha_wrap_alpha_percentage
-        self.offset_memory_percentage = scene.alpha_wrap_offset_percentage
+        # Always return all values to their clean defaults when invoked for a new object or selection
+        self.mode = "PERCENTAGE"
+        self.prev_mode = "PERCENTAGE"
+        _last_alpha_wrap_mode = "PERCENTAGE"
+        self.per_obj = False
+        _last_alpha_wrap_per_obj = False
+
+        self.alpha_memory_percentage = DEFAULT_ALPHA_PERCENTAGE
+        self.offset_memory_percentage = DEFAULT_OFFSET_PERCENTAGE
         self.alpha_memory_absolute, self.offset_memory_absolute = (
             get_seeded_absolute_values(self.per_obj)
         )
-        if self.mode == "ABSOLUTE":
-            self.alpha = self.alpha_memory_absolute
-            self.offset = self.offset_memory_absolute
+
+        self.alpha = DEFAULT_ALPHA_PERCENTAGE
+        self.offset = DEFAULT_OFFSET_PERCENTAGE
+        self.mesh_resolution = 1.0
 
         return self.execute(context)
 
@@ -1162,11 +1173,13 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         col.prop(self, "alpha")
         col.prop(self, "offset")
         col.prop(self, "mode")
-        col.prop(self, "decimate_angle")
-        col.prop(self, "decimate_faces")
+        col.prop(self, "mesh_resolution")
+        poly_count = _get_selected_colliders_poly_count(context)
+        col.label(text=f"Polygons: {poly_count:,}")
         col.prop(self, "per_obj")
 
     def execute(self, context):
+        global _last_alpha_wrap_mode, _last_alpha_wrap_per_obj
         if not is_pymeshlab_available():
             bpy.ops.mesh.install_pymeshlab("INVOKE_DEFAULT")
             return {"CANCELLED"}
@@ -1186,10 +1199,21 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
 
         scene = context.scene
 
+        # Default to Absolute mode when switching to Per Object mode to prevent
+        # extreme processing times caused by tiny relative percentage values on small parts.
+        if _last_alpha_wrap_per_obj is False and self.per_obj:
+            if self.mode != "ABSOLUTE":
+                self.mode = "ABSOLUTE"
+                seeded_alpha, seeded_offset = get_seeded_absolute_values(True, selected_objs)
+                self.alpha_memory_absolute = seeded_alpha
+                self.offset_memory_absolute = seeded_offset
+        _last_alpha_wrap_per_obj = self.per_obj
+
         # A mode switch keeps the values previously entered for the newly selected mode
         # instead of converting the current value, which would otherwise drift on every
         # Redo panel re-run.
-        if self.prev_mode and self.prev_mode != self.mode:
+        last_mode = _last_alpha_wrap_mode if _last_alpha_wrap_mode is not None else self.prev_mode
+        if last_mode and last_mode != self.mode:
             if self.mode == "PERCENTAGE":
                 self.alpha = self.alpha_memory_percentage
                 self.offset = self.offset_memory_percentage
@@ -1197,6 +1221,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                 self.alpha = self.alpha_memory_absolute
                 self.offset = self.offset_memory_absolute
         self.prev_mode = self.mode
+        _last_alpha_wrap_mode = self.mode
 
         min_alpha, min_offset = get_alpha_wrap_min_values(
             self.mode, self.per_obj, selected_objs
@@ -1231,16 +1256,6 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         )
 
         is_percentage = (self.mode == "PERCENTAGE")
-        decimate_angle = (
-            self.decimate_angle
-            if self.decimate_angle > 0
-            else None
-        )
-        decimate_faces = (
-            self.decimate_faces
-            if self.decimate_faces > 0
-            else None
-        )
 
         # Keep scene properties in sync with operator adjustments. The mode must be set
         # first so the per-mode memory properties receive the values of the active mode.
@@ -1248,8 +1263,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         scene.alpha_wrap_per_obj = self.per_obj
         scene.alpha_wrap_alpha = self.alpha
         scene.alpha_wrap_offset = self.offset
-        scene.alpha_wrap_decimate_angle = self.decimate_angle
-        scene.alpha_wrap_decimate_faces = self.decimate_faces
+        scene.alpha_wrap_mesh_resolution = self.mesh_resolution
 
         tasks = []
         try:
@@ -1283,7 +1297,6 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                     "visual_obj_name": selected_objs[0].name,
                     "source_visual_names": [obj.name for obj in selected_objs],
                     "target_name": target_name,
-                    "decimate_angle": decimate_angle,
                 })
                 # Remove any leftover individual colliders from other objects in selected_objs
                 for other_obj in selected_objs[1:]:
@@ -1314,7 +1327,6 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                         "visual_obj_name": visual_obj.name,
                         "source_visual_names": [visual_obj.name],
                         "target_name": target_name,
-                        "decimate_angle": decimate_angle,
                     })
 
             # Restore original selection
@@ -1334,20 +1346,31 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
 
         created_colliders = []
         try:
+            cache_dir = os.path.join(tempfile.gettempdir(), "sdf_gen_alpha_wrap_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+
             for task in tasks:
                 temp_in = task["temp_in"]
                 temp_out = task["temp_out"]
                 visual_obj = bpy.data.objects.get(task["visual_obj_name"])
 
-                alpha_wrap_mesh(
-                    input_path=temp_in,
-                    output_path=temp_out,
-                    alpha=alpha,
-                    offset=offset,
-                    is_percentage=is_percentage,
-                    decimate_angle=decimate_angle,
-                    decimate_faces=decimate_faces,
-                )
+                in_size = os.path.getsize(temp_in) if os.path.exists(temp_in) else 0
+                key_str = f"{task['target_name']}_{alpha:.6f}_{offset:.6f}_{is_percentage}_{in_size}"
+                cache_hash = hashlib.md5(key_str.encode("utf-8")).hexdigest()
+                cached_stl = os.path.join(cache_dir, f"{cache_hash}.stl")
+
+                if os.path.exists(cached_stl) and os.path.getsize(cached_stl) > 0:
+                    shutil.copyfile(cached_stl, temp_out)
+                else:
+                    alpha_wrap_mesh(
+                        input_path=temp_in,
+                        output_path=temp_out,
+                        alpha=alpha,
+                        offset=offset,
+                        is_percentage=is_percentage,
+                    )
+                    if os.path.exists(temp_out) and os.path.getsize(temp_out) > 0:
+                        shutil.copyfile(temp_out, cached_stl)
 
                 if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
                     continue
@@ -1357,7 +1380,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                     collider_obj=collider_obj,
                     visual_obj=visual_obj,
                     target_name=task["target_name"],
-                    decimate_angle=task.get("decimate_angle"),
+                    mesh_resolution=self.mesh_resolution,
                     source_visual_names=task.get("source_visual_names"),
                 )
                 created_colliders.append(collider_obj)

@@ -127,7 +127,7 @@ def alpha_wrap_mesh(
     recompute_normals: bool = True,
     verbose: bool = True,
 ) -> Dict[str, Any]:
-    """Wraps a 3D mesh using CGAL 3D Alpha-Wrapping with optional planar decimation."""
+    """Wraps a 3D mesh using CGAL 3D Alpha-Wrapping."""
     # CGAL 3D Alpha Wrapping strictly requires alpha > 0 and offset > 0.
     if alpha <= 0.0:
         raise ValueError(

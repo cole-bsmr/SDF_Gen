@@ -498,30 +498,13 @@ bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
     update=_on_alpha_wrap_mode_update,
 )
 
-bpy.types.Scene.alpha_wrap_decimate_angle = bpy.props.FloatProperty(
-    name="Planar Angle",
-    description=(
-        "Planar decimation angle limit in degrees (uses Blender's built-in Decimate Planar modifier):\n"
-        "Dissolves adjacent coplanar faces meeting at a dihedral angle below this threshold.\n"
-        "Significantly reduces polygon count on flat surfaces while cleanly preserving sharp edges.\n"
-        "Set to 0 to disable planar decimation"
-    ),
-    default=5.0,
+bpy.types.Scene.alpha_wrap_mesh_resolution = bpy.props.FloatProperty(
+    name="Mesh Resolution",
+    description="Control the resolution of the mesh collider.",
+    default=1.0,
     min=0.0,
-    max=180.0,
-    precision=2,
-)
-
-bpy.types.Scene.alpha_wrap_decimate_faces = bpy.props.IntProperty(
-    name="Target Faces",
-    description=(
-        "Target face count for Quadric Edge Collapse decimation.\n"
-        "Further simplifies the mesh to the specified maximum number of triangular faces.\n"
-        "Applied after planar angle decimation.\n"
-        "Set to 0 to disable and keep all faces from the planar decimation step"
-    ),
-    default=0,
-    min=0,
+    max=1.0,
+    step=0.1,
 )
 
 bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
