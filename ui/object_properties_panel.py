@@ -63,7 +63,7 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         if context.object.modifiers.get('Decimate'):
             box = layout.box()
             box.label(text="Decimate Mesh")
-            box.prop(context.object.modifiers['Decimate'], "ratio", text="Mesh Resolution")
+            box.prop(context.object.modifiers['Decimate'], "ratio", text="Decimation Ratio")
             triangle_count = len(context.object.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.loop_triangles)
             box.label(text=f"Triangles: {triangle_count}")
         else:
@@ -241,14 +241,14 @@ class SDFG_PT_ColliderPropertiesPanel(bpy.types.Panel):
         obj = context.object
         layout.label(text="Collider Properties: " + obj.name)
 
-        res_mod = obj.modifiers.get("Mesh Collider Resolution")
+        res_mod = obj.modifiers.get("Decimation ratio")
         margin_mod = obj.modifiers.get("Mesh Collider Margin")
 
         if res_mod or margin_mod:
             box = layout.box()
             box.label(text="Mesh Collider Settings")
             if res_mod and res_mod.type == "DECIMATE":
-                box.prop(res_mod, "ratio", text="Mesh Resolution")
+                box.prop(res_mod, "ratio", text="Decimation Ratio")
             if margin_mod and margin_mod.type == "SOLIDIFY":
                 box.prop(margin_mod, "thickness", text="Mesh Margin")
 

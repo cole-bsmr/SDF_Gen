@@ -498,9 +498,14 @@ bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
     update=_on_alpha_wrap_mode_update,
 )
 
-bpy.types.Scene.alpha_wrap_mesh_resolution = bpy.props.FloatProperty(
-    name="Mesh Resolution",
-    description="Control the resolution of the mesh collider.",
+bpy.types.Scene.alpha_wrap_decimate_mod_ratio = bpy.props.FloatProperty(
+    name="Decimation ratio",
+    description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
+        "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
+        "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"
+        "The decimation algorithm is the the edge-collapse modifier of Blender's built-in Decimate modifier.\n"
+        "It ranks the edges of the mesh by a cost function and collapses the edges with the least "
+        "impact on the shape of the mesh first.",
     default=1.0,
     min=0.0,
     max=1.0,

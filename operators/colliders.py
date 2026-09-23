@@ -87,9 +87,14 @@ class MESH_OT_add_collider(bpy.types.Operator):
         default=False,
     )  # type: ignore
 
-    mesh_resolution: bpy.props.FloatProperty(
-        name="Mesh Resolution",
-        description="Control the resolution of the mesh collider.",
+    decimate_mod_ratio: bpy.props.FloatProperty(
+        name="Decimation ratio",
+        description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
+        "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
+        "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"
+        "The decimation algorithm is the the edge-collapse modifier of Blender's built-in Decimate modifier.\n"
+        "It ranks the edges of the mesh by a cost function and collapses the edges with the least "
+        "impact on the shape of the mesh first.",
         default=1.0,
         min=0,
         max=1,
@@ -107,7 +112,7 @@ class MESH_OT_add_collider(bpy.types.Operator):
 
     def invoke(self, context, event):
         self.plane_flip = False
-        self.mesh_resolution = 1.0
+        self.decimate_mod_ratio = 1.0
         self.mesh_inflate = 0.0
         return self.execute(context)
 
@@ -125,7 +130,7 @@ class MESH_OT_add_collider(bpy.types.Operator):
         layout.prop(self, "per_obj")
 
         if self.shape_type == "Mesh":
-            layout.prop(self, "mesh_resolution")
+            layout.prop(self, "decimate_mod_ratio")
             layout.prop(self, "mesh_inflate")
             poly_count = _get_selected_colliders_poly_count(context)
             layout.label(text=f"Polygons: {poly_count:,}")
@@ -179,7 +184,7 @@ class MESH_OT_add_collider(bpy.types.Operator):
             elif self.shape_type == "Plane":
                 plane_collider(self.axis_set, visual_obj)
             elif self.shape_type == "Mesh":
-                mesh_collider(visual_obj, self.mesh_resolution, self.mesh_inflate)
+                mesh_collider(visual_obj, self.decimate_mod_ratio, self.mesh_inflate)
 
             collider_obj = bpy.context.active_object
 
@@ -424,7 +429,7 @@ def plane_collider(axis_set, visual_obj):
     bpy.context.active_object.collider_type = "PlaneCollider"
 
 
-def mesh_collider(visual_obj, mesh_resolution, mesh_inflate):
+def mesh_collider(visual_obj, decimate_mod_ratio, mesh_inflate):
     """Create MESH Collider"""
 
     # print (visual_obj)
@@ -455,12 +460,12 @@ def mesh_collider(visual_obj, mesh_resolution, mesh_inflate):
 
     # Add decimate modifier for mesh collider polygon count reduction
     cm_mod = bpy.context.active_object.modifiers.new(
-        name="Mesh Collider Resolution", type="DECIMATE"
+        name="Decimation ratio", type="DECIMATE"
     )
     cm_mod.ratio = 1.0
-    # Set mesh resolution property so it can be controlled via menu
-    bpy.context.active_object.modifiers["Mesh Collider Resolution"].ratio = (
-        mesh_resolution
+    # Set decimate property so it can be controlled via menu
+    bpy.context.active_object.modifiers["Decimation ratio"].ratio = (
+        decimate_mod_ratio
     )
 
     # Add mesh collider margin for ensuring lower poly mesh collider fully encapsulates visual
@@ -811,7 +816,7 @@ def setup_alpha_wrap_collider(
     collider_obj,
     visual_obj,
     target_name,
-    mesh_resolution=1.0,
+    decimate_mod_ratio=1.0,
     source_visual_names=None,
 ):
     """Configures and positions an imported STL object as an Alpha Wrap collider."""
@@ -820,9 +825,9 @@ def setup_alpha_wrap_collider(
 
     # Add decimate modifier for mesh collider polygon count reduction
     cm_mod = collider_obj.modifiers.new(
-        name="Mesh Collider Resolution", type="DECIMATE"
+        name="Decimate", type="DECIMATE"
     )
-    cm_mod.ratio = mesh_resolution
+    cm_mod.ratio = decimate_mod_ratio
 
     collider_obj.object_type = "ColliderObject"
     collider_obj.collider_type = "MeshCollider"
@@ -889,7 +894,7 @@ def alpha_wrap_collider(
     alpha,
     offset,
     is_percentage,
-    mesh_resolution=1.0,
+    decimate_mod_ratio=1.0,
 ):
     """Synchronously creates a new alpha-wrapped collision mesh object from visual_obj."""
     temp_in = tempfile.mktemp(suffix=".stl")
@@ -917,7 +922,7 @@ def alpha_wrap_collider(
             collider_obj=collider_obj,
             visual_obj=visual_obj,
             target_name=target_name,
-            mesh_resolution=mesh_resolution,
+            decimate_mod_ratio=decimate_mod_ratio,
         )
         return collider_obj
 
@@ -1127,9 +1132,14 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         default="PERCENTAGE",
     )
 
-    mesh_resolution: bpy.props.FloatProperty(
-        name="Mesh Resolution",
-        description="Control the resolution of the mesh collider.",
+    decimate_mod_ratio: bpy.props.FloatProperty(
+        name="Decimation ratio",
+        description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
+        "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
+        "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"
+        "The decimation algorithm is the the edge-collapse modifier of Blender's built-in Decimate modifier.\n"
+        "It ranks the edges of the mesh by a cost function and collapses the edges with the least "
+        "impact on the shape of the mesh first.",
         default=1.0,
         min=0.0,
         max=1.0,
@@ -1162,7 +1172,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
 
         self.alpha = DEFAULT_ALPHA_PERCENTAGE
         self.offset = DEFAULT_OFFSET_PERCENTAGE
-        self.mesh_resolution = 1.0
+        self.decimate_mod_ratio = 1.0
 
         return self.execute(context)
 
@@ -1173,7 +1183,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         col.prop(self, "alpha")
         col.prop(self, "offset")
         col.prop(self, "mode")
-        col.prop(self, "mesh_resolution")
+        col.prop(self, "decimate_mod_ratio")
         poly_count = _get_selected_colliders_poly_count(context)
         col.label(text=f"Polygons: {poly_count:,}")
         col.prop(self, "per_obj")
@@ -1263,7 +1273,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
         scene.alpha_wrap_per_obj = self.per_obj
         scene.alpha_wrap_alpha = self.alpha
         scene.alpha_wrap_offset = self.offset
-        scene.alpha_wrap_mesh_resolution = self.mesh_resolution
+        scene.alpha_wrap_decimate_mod_ratio = self.decimate_mod_ratio
 
         tasks = []
         try:
@@ -1380,7 +1390,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
                     collider_obj=collider_obj,
                     visual_obj=visual_obj,
                     target_name=task["target_name"],
-                    mesh_resolution=self.mesh_resolution,
+                    decimate_mod_ratio=self.decimate_mod_ratio,
                     source_visual_names=task.get("source_visual_names"),
                 )
                 created_colliders.append(collider_obj)

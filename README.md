@@ -110,7 +110,7 @@ Create primitive colliders that will fit around a selected visual object. When c
 
 ### Mesh Collider
 Creates a convex hull mesh collider. This method is less efficient but provides higher accuracy. Use the operation panel to:
-* Reduce the resolution of the convex hull mesh using the **`Mesh Resolution`** slider.
+* Reduce the resolution of the convex hull mesh using the **`Decimate`** slider.
 * Adjust the **`Mesh Margin`** slider to ensure all parts of the visual object are contained within the collider as mesh resolution is lowered.
 
 ### Alpha Wrap Collider
