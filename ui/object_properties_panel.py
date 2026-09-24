@@ -63,7 +63,7 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         if context.object.modifiers.get('Decimate'):
             box = layout.box()
             box.label(text="Decimate Mesh")
-            box.prop(context.object.modifiers['Decimate'], "ratio", text="Mesh Resolution")
+            box.prop(context.object.modifiers['Decimate'], "ratio", text="Decimation Ratio")
             triangle_count = len(context.object.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.loop_triangles)
             box.label(text=f"Triangles: {triangle_count}")
         else:
@@ -218,3 +218,49 @@ class SDFG_PT_FramePropertiesPanel(bpy.types.Panel):
         split = row.split(factor=0.4)
         split.label(text="Parent Link:")
         split.prop(obj, "frame_parent", text="")
+
+
+class SDFG_PT_ColliderPropertiesPanel(bpy.types.Panel):
+    bl_label = "Collider Properties"
+    bl_idname = "SDFG_PT_ColliderPropertiesPanel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "SDF_Gen"
+
+    @classmethod
+    def poll(cls, context):
+        if not context.object or not context.selected_objects:
+            return False
+        return (
+            context.object.type == "MESH"
+            and getattr(context.object, "object_type", "") == "ColliderObject"
+        )
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+        layout.label(text="Collider Properties: " + obj.name)
+
+        res_mod = (
+            obj.modifiers.get("Decimation Ratio")
+            or obj.modifiers.get("Decimation ratio")
+            or obj.modifiers.get("Decimate")
+        )
+        margin_mod = obj.modifiers.get("Mesh Collider Margin")
+
+        if res_mod or margin_mod:
+            box = layout.box()
+            box.label(text="Mesh Collider Settings")
+            if res_mod and res_mod.type == "DECIMATE":
+                box.prop(res_mod, "ratio", text="Decimation Ratio")
+            if margin_mod and margin_mod.type == "SOLIDIFY":
+                box.prop(margin_mod, "thickness", text="Mesh Margin")
+
+            try:
+                dg = context.evaluated_depsgraph_get()
+                eval_obj = obj.evaluated_get(dg)
+                poly_count = len(eval_obj.data.polygons)
+                box.label(text=f"Polygons: {poly_count:,}")
+            except Exception:
+                pass
+

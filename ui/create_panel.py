@@ -8,6 +8,7 @@ from ..operators.general_functions import links_check
 from ..operators.general_functions import get_armature
 from ..operators.general_functions import get_instances_collection
 from ..operators.create import switch_to_viewlayer
+from ..operators.alpha_wrap import is_pymeshlab_available
 
 # bpy.types.Scene.armature_found = bpy.props.BoolProperty(default=False)
 
@@ -77,22 +78,38 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
         elif scene.tab_option == "COLLIDERS":
             links_found = links_check()
-            split = box.split()
-            col = split.column()
+            col = box.column()
 
             if links_found == False:
                 col.label(text="Something")
 
-            col.label(text="Create:")
+            col.label(text="Primitive Colliders:")
             col.operator("mesh.add_collider", text="Box").shape_type = "Box"
             col.operator("mesh.add_collider", text="Cylinder").shape_type = "Cylinder"
             col.operator("mesh.add_collider", text="Sphere").shape_type = "Sphere"
             col.operator("mesh.add_collider", text="Cone").shape_type = "Cone"
             col.operator("mesh.add_collider", text="Plane").shape_type = "Plane"
-            col.operator("mesh.add_collider", text="Mesh Collider").shape_type = "Mesh"
 
-            col = split.column()
-            
+            col.label(text="Mesh Colliders:")
+            col.operator("mesh.add_collider", text="Convex Hull").shape_type = "Mesh"
+
+            installing = getattr(context.window_manager, "pymeshlab_installing", False)
+            if installing:
+                status_text = (
+                    getattr(context.window_manager, "pymeshlab_install_status", "")
+                    or "Installing PyMeshLab..."
+                )
+                col.operator(
+                    "mesh.install_pymeshlab",
+                    text=status_text,
+                    icon="TIME",
+                )
+            elif not is_pymeshlab_available():
+                col.operator("mesh.install_pymeshlab", text="Alpha Wrap")
+            else:
+                col.operator("mesh.create_alpha_wrap_collider", text="Alpha Wrap")
+
+            col = box.column()
             col.label(text="Transform:")
             col.operator("wm.tool_set_by_id", text="Scale Cage").name = (
                 "builtin.scale_cage"

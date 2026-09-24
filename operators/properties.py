@@ -360,3 +360,186 @@ bpy.types.PoseBone.pose_bone_location = FloatVectorProperty(
     unit='LENGTH',
     update=update_pose_bone_location
 )
+
+# Alpha Wrap Collider Properties
+# Default values for Alpha Wrap modes
+DEFAULT_ALPHA_PERCENTAGE = 2.0
+DEFAULT_OFFSET_PERCENTAGE = 0.5
+DEFAULT_ALPHA_ABSOLUTE = 0.02
+DEFAULT_OFFSET_ABSOLUTE = 0.005
+
+_is_updating_alpha_wrap_mode = False
+
+
+def _on_alpha_wrap_alpha_update(self, context):
+    global _is_updating_alpha_wrap_mode
+    if _is_updating_alpha_wrap_mode:
+        return
+    mode = getattr(self, "alpha_wrap_mode", "PERCENTAGE")
+    if mode == "PERCENTAGE":
+        self.alpha_wrap_alpha_percentage = self.alpha_wrap_alpha
+    else:
+        self.alpha_wrap_alpha_absolute = self.alpha_wrap_alpha
+
+
+def _on_alpha_wrap_offset_update(self, context):
+    global _is_updating_alpha_wrap_mode
+    if _is_updating_alpha_wrap_mode:
+        return
+    mode = getattr(self, "alpha_wrap_mode", "PERCENTAGE")
+    if mode == "PERCENTAGE":
+        self.alpha_wrap_offset_percentage = self.alpha_wrap_offset
+    else:
+        self.alpha_wrap_offset_absolute = self.alpha_wrap_offset
+
+
+def _on_alpha_wrap_mode_update(self, context):
+    global _is_updating_alpha_wrap_mode
+    _is_updating_alpha_wrap_mode = True
+    try:
+        if self.alpha_wrap_mode == "PERCENTAGE":
+            self.alpha_wrap_alpha = self.alpha_wrap_alpha_percentage
+            self.alpha_wrap_offset = self.alpha_wrap_offset_percentage
+        else:
+            self.alpha_wrap_alpha = self.alpha_wrap_alpha_absolute
+            self.alpha_wrap_offset = self.alpha_wrap_offset_absolute
+    finally:
+        _is_updating_alpha_wrap_mode = False
+
+
+# Stored last-entered values per mode
+bpy.types.Scene.alpha_wrap_alpha_percentage = bpy.props.FloatProperty(
+    name="Alpha (Percentage)",
+    description="Stored Alpha value for Percentage mode",
+    default=DEFAULT_ALPHA_PERCENTAGE,
+    min=0.5,
+    soft_min=0.5,
+    max=100.0,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_offset_percentage = bpy.props.FloatProperty(
+    name="Offset (Percentage)",
+    description="Stored Offset value for Percentage mode",
+    default=DEFAULT_OFFSET_PERCENTAGE,
+    min=0.01,
+    soft_min=0.01,
+    max=100.0,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_alpha_absolute = bpy.props.FloatProperty(
+    name="Alpha (Absolute)",
+    description="Stored Alpha value for Absolute mode",
+    default=DEFAULT_ALPHA_ABSOLUTE,
+    soft_min=0.0001,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_offset_absolute = bpy.props.FloatProperty(
+    name="Offset (Absolute)",
+    description="Stored Offset value for Absolute mode",
+    default=DEFAULT_OFFSET_ABSOLUTE,
+    soft_min=0.0001,
+    precision=4,
+)
+
+bpy.types.Scene.alpha_wrap_alpha = bpy.props.FloatProperty(
+    name="Alpha",
+    description=(
+        "Probe ball radius / feature resolution: controls how tightly the wrap conforms to the surface.\n"
+        "Smaller values capture finer geometric details, cavities, and indentations.\n"
+        "Larger values bridge across holes and gaps, creating a smoother outer shell.\n"
+        "Performance: computation duration scales sharply with smaller Alpha (~3x-8x longer when halved),\n"
+        "as 3D spatial cell and facet counts scale with (1 / Alpha^2) to (1 / Alpha^3).\n"
+        "Values between 1.0% and 3.0% provide an optimal balance of speed and fidelity.\n"
+        "Minimum allowed value is 0.5% of bounding box diagonal.\n"
+        "Expressed as % of bounding box diagonal (Percentage mode, default: 2.0%) or meters (Absolute mode, default: 0.02m)"
+    ),
+    default=DEFAULT_ALPHA_PERCENTAGE,
+    soft_min=0.0001,
+    precision=4,
+    update=_on_alpha_wrap_alpha_update,
+)
+
+bpy.types.Scene.alpha_wrap_offset = bpy.props.FloatProperty(
+    name="Offset",
+    description=(
+        "Offset distance: thickness added outward from the input surface.\n"
+        "Guarantees the collision wrap strictly encloses the visual mesh with at least this margin.\n"
+        "Also thickens thin walls and non-manifold geometry into a solid watertight volume.\n"
+        "Minimum allowed value is 0.01% of bounding box diagonal.\n"
+        "Expressed as % of bounding box diagonal (Percentage mode, default: 0.5%) or meters (Absolute mode, default: 0.005m)"
+    ),
+    default=DEFAULT_OFFSET_PERCENTAGE,
+    soft_min=0.0001,
+    precision=4,
+    update=_on_alpha_wrap_offset_update,
+)
+
+bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
+    name="Mode",
+    description="Coordinate units used for Alpha and Offset values",
+    items=[
+        (
+            "PERCENTAGE",
+            "Percentage",
+            "Values are calculated as a percentage of the object bounding box diagonal. "
+            "Scale-independent and recommended for objects of varying sizes",
+        ),
+        (
+            "ABSOLUTE",
+            "Absolute",
+            "Values are in absolute metric units (meters). "
+            "Useful when exact physical tolerances or clearances are required",
+        ),
+    ],
+    default="PERCENTAGE",
+    update=_on_alpha_wrap_mode_update,
+)
+
+bpy.types.Scene.alpha_wrap_decimate_mod_ratio = bpy.props.FloatProperty(
+    name="Decimation Ratio",
+    description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
+        "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
+        "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"
+        "The decimation algorithm is the the edge-collapse modifier of Blender's built-in Decimate modifier.\n"
+        "It ranks the edges of the mesh by a cost function and collapses the edges with the least "
+        "impact on the shape of the mesh first.",
+    default=1.0,
+    min=0.0,
+    max=1.0,
+    step=0.1,
+)
+
+bpy.types.Scene.alpha_wrap_per_obj = bpy.props.BoolProperty(
+    name="Per Object",
+    description="Toggle for multiple selection behavior.",
+    default=False,
+)
+
+# Alpha Wrap Async State
+bpy.types.WindowManager.alpha_wrap_in_progress = bpy.props.BoolProperty(
+    name="Alpha Wrap In Progress",
+    description="Indicates if an alpha wrap operation is currently running in the background",
+    default=False,
+)
+
+bpy.types.WindowManager.alpha_wrap_status = bpy.props.StringProperty(
+    name="Alpha Wrap Status",
+    description="Current status of the background alpha wrap operation",
+    default="",
+)
+
+# PyMeshLab Installation State
+bpy.types.WindowManager.pymeshlab_installing = bpy.props.BoolProperty(
+    name="PyMeshLab Installing",
+    description="Indicates if PyMeshLab is currently being installed in the background",
+    default=False,
+)
+
+bpy.types.WindowManager.pymeshlab_install_status = bpy.props.StringProperty(
+    name="PyMeshLab Install Status",
+    description="Current status of PyMeshLab installation",
+    default="",
+)

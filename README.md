@@ -1,5 +1,66 @@
 # SDF_Gen Guide [WIP]
 
+SDF_Gen is a Blender add-on for preparing 3D assets, building kinematics/joint hierarchies, generating collision geometry, and exporting simulation-ready SDF (Simulation Description Format) models.
+
+---
+
+## Installation
+
+### 1. Install the Add-on in Blender
+
+#### Method A: Symlink / Direct Folder (Recommended for Development)
+Link or copy this repository folder into your Blender user scripts directory as `SDF_Gen`:
+
+* **Linux:**
+  ```bash
+  ln -s /path/to/SDF_Gen ~/.config/blender/<version>/scripts/addons/SDF_Gen
+  ```
+* **macOS:**
+  ```bash
+  ln -s /path/to/SDF_Gen ~/Library/Application\ Support/Blender/<version>/scripts/addons/SDF_Gen
+  ```
+* **Windows (Command Prompt as Administrator):**
+  ```cmd
+  mklink /D "%APPDATA%\Blender Foundation\Blender\<version>\scripts\addons\SDF_Gen" "C:\path\to\SDF_Gen"
+  ```
+
+#### Method B: Install as Zip
+1. Create a zip archive of the `SDF_Gen` folder.
+2. In Blender, open **Edit > Preferences > Add-ons**.
+3. In the top-right menu (arrow icon), select **Install from Disk...** (or **Install...** in earlier Blender versions).
+4. Select the `.zip` archive.
+5. Search for **SDF Gen** and enable it by checking the checkbox.
+
+The add-on panel will appear in the 3D Viewport sidebar (**N** key) under the **SDF_Gen** tab.
+
+---
+
+### 2. Optional Dependencies (Alpha Wrap Collider)
+
+The **Alpha Wrap** collider generator requires [PyMeshLab](https://github.com/cnr-isti-vclab/PyMeshLab) to produce watertight, shrink-wrapped collision meshes.
+
+* **In-Addon One-Click Install (Recommended):**
+  In the **Colliders** tab, locate the **Alpha Wrap** section and click the **`Install PyMeshLab`** button. Confirm the dialog prompt, and the add-on will automatically download and install PyMeshLab in the background. Once finished, the Alpha Wrap menu will immediately appear.
+
+* **Manual Installation (Alternative):**
+  You can also install `pymeshlab` manually into **Blender's bundled Python environment**:
+  * **Linux:**
+    ```bash
+    /path/to/blender/<version>/python/bin/python3 -m pip install pymeshlab
+    ```
+  * **macOS:**
+    ```bash
+    /Applications/Blender.app/Contents/Resources/<version>/python/bin/python3 -m pip install pymeshlab
+    ```
+  * **Windows:**
+    ```cmd
+    "C:\Program Files\Blender Foundation\Blender <version>\<version>\python\bin\python.exe" -m pip install pymeshlab
+    ```
+
+*(Note: Standard primitive colliders and convex hull mesh colliders do not require external dependencies.)*
+
+---
+
 ## Workspaces
 SDF_Gen is organized into **“workspaces”**. Each space is focused on a specific step in the SDF creation process. Accessing each workspace is done through a row of tabs at the top of the addon UI.
 
@@ -49,8 +110,17 @@ Create primitive colliders that will fit around a selected visual object. When c
 
 ### Mesh Collider
 Creates a convex hull mesh collider. This method is less efficient but provides higher accuracy. Use the operation panel to:
-* Reduce the resolution of the convex hull mesh using the **`Mesh Resolution`** slider.
+* Reduce the resolution of the convex hull mesh using the **`Decimate`** slider.
 * Adjust the **`Mesh Margin`** slider to ensure all parts of the visual object are contained within the collider as mesh resolution is lowered.
+
+### Alpha Wrap Collider
+Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geometry.
+* **`Alpha`**: Size of the probe ball / feature resolution (minimum `0.5%` of bounding box diagonal). In percentage mode, this is a percentage of the bounding box diagonal (default: `2.0%`). In absolute mode, this is in meters, seeded with `2.0%` of the bounding box diagonal of the current selection every time the operator is started. Smaller values capture finer features but increase computation time significantly (halving Alpha roughly increases runtime by 3x to 8x as spatial cell counts scale between `1 / alpha^2` and `1 / alpha^3`).
+* **`Offset`**: Surface offset / expansion distance added to the wrapped mesh (minimum `0.01%` of bounding box diagonal). Default: `0.5%` of the bounding box diagonal, in percent or in meters depending on the mode.
+* **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters). Switching between modes preserves the last entered values for each mode; the absolute values are only re-derived from the bounding box when the operator is started anew.
+* **`Planar Angle`**: Dihedral angle limit in degrees using Blender's built-in Decimate Planar modifier to cleanly dissolve flat coplanar faces without generating overlapping or duplicate geometry (set to `0` to disable).
+* **`Target Faces`**: Optional target face count simplification using Quadric Edge Collapse (set to `0` to disable).
+* **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider (default: off, i.e. one collider for the whole selection).
 
 ### Transform
 Colliders will often need to be adjusted to properly fit the underlying visual objects. Use these tools to manually adjust the colliders.
