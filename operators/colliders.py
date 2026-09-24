@@ -88,7 +88,7 @@ class MESH_OT_add_collider(bpy.types.Operator):
     )  # type: ignore
 
     decimate_mod_ratio: bpy.props.FloatProperty(
-        name="Decimation ratio",
+        name="Decimation Ratio",
         description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
         "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
         "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"
@@ -460,11 +460,11 @@ def mesh_collider(visual_obj, decimate_mod_ratio, mesh_inflate):
 
     # Add decimate modifier for mesh collider polygon count reduction
     cm_mod = bpy.context.active_object.modifiers.new(
-        name="Decimation ratio", type="DECIMATE"
+        name="Decimation Ratio", type="DECIMATE"
     )
     cm_mod.ratio = 1.0
     # Set decimate property so it can be controlled via menu
-    bpy.context.active_object.modifiers["Decimation ratio"].ratio = (
+    bpy.context.active_object.modifiers["Decimation Ratio"].ratio = (
         decimate_mod_ratio
     )
 
@@ -825,7 +825,7 @@ def setup_alpha_wrap_collider(
 
     # Add decimate modifier for mesh collider polygon count reduction
     cm_mod = collider_obj.modifiers.new(
-        name="Decimate", type="DECIMATE"
+        name="Decimation Ratio", type="DECIMATE"
     )
     cm_mod.ratio = decimate_mod_ratio
 
@@ -1133,7 +1133,7 @@ class MESH_OT_create_alpha_wrap_collider(bpy.types.Operator):
     )
 
     decimate_mod_ratio: bpy.props.FloatProperty(
-        name="Decimation ratio",
+        name="Decimation Ratio",
         description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
         "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
         "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"

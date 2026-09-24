@@ -499,7 +499,7 @@ bpy.types.Scene.alpha_wrap_mode = bpy.props.EnumProperty(
 )
 
 bpy.types.Scene.alpha_wrap_decimate_mod_ratio = bpy.props.FloatProperty(
-    name="Decimation ratio",
+    name="Decimation Ratio",
     description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
         "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
         "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"

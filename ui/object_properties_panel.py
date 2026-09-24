@@ -241,7 +241,11 @@ class SDFG_PT_ColliderPropertiesPanel(bpy.types.Panel):
         obj = context.object
         layout.label(text="Collider Properties: " + obj.name)
 
-        res_mod = obj.modifiers.get("Decimation ratio")
+        res_mod = (
+            obj.modifiers.get("Decimation Ratio")
+            or obj.modifiers.get("Decimation ratio")
+            or obj.modifiers.get("Decimate")
+        )
         margin_mod = obj.modifiers.get("Mesh Collider Margin")
 
         if res_mod or margin_mod:
