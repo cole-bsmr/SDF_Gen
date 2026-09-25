@@ -9,6 +9,7 @@ from ..operators.general_functions import get_armature
 from ..operators.general_functions import get_instances_collection
 from ..operators.create import switch_to_viewlayer
 from ..operators.alpha_wrap import is_pymeshlab_available
+from ..operators.coacd_worker import is_coacd_available
 
 # bpy.types.Scene.armature_found = bpy.props.BoolProperty(default=False)
 
@@ -108,6 +109,23 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                 col.operator("mesh.install_pymeshlab", text="Alpha Wrap")
             else:
                 col.operator("mesh.create_alpha_wrap_collider", text="Alpha Wrap")
+
+            # Convex Decomposition (CoACD)
+            installing_coacd = getattr(context.window_manager, "coacd_installing", False)
+            if installing_coacd:
+                coacd_status = (
+                    getattr(context.window_manager, "coacd_install_status", "")
+                    or "Installing CoACD..."
+                )
+                col.operator(
+                    "mesh.install_coacd",
+                    text=coacd_status,
+                    icon="TIME",
+                )
+            elif not is_coacd_available():
+                col.operator("mesh.install_coacd", text="Convex Decomposition")
+            else:
+                col.operator("mesh.create_convex_decomposition", text="Convex Decomposition")
 
             col = box.column()
             col.label(text="Transform:")

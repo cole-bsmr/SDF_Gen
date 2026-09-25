@@ -543,3 +543,68 @@ bpy.types.WindowManager.pymeshlab_install_status = bpy.props.StringProperty(
     description="Current status of PyMeshLab installation",
     default="",
 )
+
+# Convex Decomposition (CoACD) Scene Properties
+bpy.types.Scene.coacd_threshold = bpy.props.FloatProperty(
+    name="Threshold",
+    description=(
+        "Concavity tolerance for convex decomposition.\n"
+        "Lower values produce more parts and capture finer details;\n"
+        "higher values produce fewer, coarser hulls."
+    ),
+    default=0.05,
+    min=0.01,
+    max=1.0,
+    step=0.01,
+    precision=3,
+)
+
+bpy.types.Scene.coacd_max_convex_hull = bpy.props.IntProperty(
+    name="Max Convex Hulls",
+    description="Maximum number of convex hulls to generate (0 for unlimited).",
+    default=16,
+    min=0,
+    max=128,
+)
+
+bpy.types.Scene.coacd_preprocess_mode = bpy.props.EnumProperty(
+    name="Preprocess Mode",
+    description="Manifold preprocessing mode for CoACD",
+    items=[
+        ("AUTO", "Auto", "Automatically detect and fix non-manifold geometry"),
+        ("ON", "On", "Always voxelize and preprocess mesh to ensure manifold geometry"),
+        ("OFF", "Off", "Disable preprocessing for clean CAD models (fastest)"),
+    ],
+    default="AUTO",
+)
+
+bpy.types.Scene.coacd_decimate_mod_ratio = bpy.props.FloatProperty(
+    name="Decimation Ratio",
+    description="Decimation ratio for the generated convex hull colliders. Lower values reduce polygon count.\n"
+        "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
+        "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.",
+    default=1.0,
+    min=0.0,
+    max=1.0,
+    step=0.1,
+)
+
+bpy.types.Scene.coacd_per_obj = bpy.props.BoolProperty(
+    name="Per Object",
+    description="Decompose each selected object individually instead of combining them into a single decomposition.",
+    default=True,
+)
+
+# CoACD Installation State
+bpy.types.WindowManager.coacd_installing = bpy.props.BoolProperty(
+    name="CoACD Installing",
+    description="Indicates if CoACD is currently being installed in the background",
+    default=False,
+)
+
+bpy.types.WindowManager.coacd_install_status = bpy.props.StringProperty(
+    name="CoACD Install Status",
+    description="Current status of CoACD installation",
+    default="",
+)
+
