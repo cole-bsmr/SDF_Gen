@@ -608,3 +608,37 @@ bpy.types.WindowManager.coacd_install_status = bpy.props.StringProperty(
     default="",
 )
 
+# Convex Decomposition Detail Box Properties
+bpy.types.Object.is_detail_box = bpy.props.BoolProperty(
+    name="Is Detail Box",
+    description="Indicates whether this object is a region-of-interest detail box for convex decomposition",
+    default=False,
+)
+
+bpy.types.Object.detail_box_target = bpy.props.StringProperty(
+    name="Target Object",
+    description="Name of the visual object this detail box refines",
+    default="",
+)
+
+bpy.types.Object.detail_threshold = bpy.props.FloatProperty(
+    name="Detail Threshold",
+    description=(
+        "Concavity tolerance for the volume inside this detail box.\n"
+        "Lower values produce more convex hulls for fine geometric features (slots, holes, etc.)"
+    ),
+    default=0.02,
+    min=0.001,
+    max=1.0,
+    step=0.01,
+    precision=3,
+)
+
+bpy.types.Object.detail_max_convex_hull = bpy.props.IntProperty(
+    name="Detail Max Hulls",
+    description="Maximum number of convex hulls to generate inside this detail box (0 for unlimited)",
+    default=16,
+    min=0,
+    max=128,
+)
+
