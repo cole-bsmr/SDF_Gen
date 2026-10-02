@@ -330,9 +330,10 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                                     collider_object.select_set(True)
                                     mesh_collider_location = collider_object.location.copy()
                                     collider_object.location += joined_translate
+                                    mesh_collider_name = collider_object.name.replace(".", "")
                                     bpy.ops.wm.stl_export(
                                         filepath=os.path.join(
-                                            folder_path, collider_object.name + ".stl"
+                                            folder_path, mesh_collider_name + ".stl"
                                         ),
                                         export_selected_objects=True,
                                         apply_modifiers=True,
@@ -343,7 +344,7 @@ class SDF_OT_export_sdf(bpy.types.Operator):
                                         f"\n  <geometry>"
                                         f"\n    <mesh>"
                                         # {round(collider_object.dimensions.x, 6)}
-                                        f"\n      <uri>{collider_object.name.replace('.', '')}.stl</uri>"
+                                        f"\n      <uri>{mesh_collider_name}.stl</uri>"
                                         f"\n    </mesh>"
                                     )
                                 # Box collider

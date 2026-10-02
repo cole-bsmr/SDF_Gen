@@ -243,7 +243,16 @@ def move_to_collection(visual_obj, collider_obj):
         collider_collection_name = visual_col.name.replace("_visual", "_colliders")
         if not bpy.data.collections.get(collider_collection_name):
             create_collection = bpy.data.collections.new(collider_collection_name)
-            bpy.context.scene.collection.children.link(create_collection)
+            create_collection.collection_type = "ColliderCollection"
+            parent_col = None
+            for pcol in bpy.data.collections:
+                if visual_col.name in pcol.children:
+                    parent_col = pcol
+                    break
+            if parent_col:
+                parent_col.children.link(create_collection)
+            else:
+                bpy.context.scene.collection.children.link(create_collection)
         target_col = bpy.data.collections[collider_collection_name]
         if collider_obj.name not in target_col.objects:
             target_col.objects.link(collider_obj)
