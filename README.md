@@ -110,7 +110,7 @@ Create primitive colliders that will fit around a selected visual object. When c
 
 ### Mesh Collider
 Creates a convex hull mesh collider. This method is less efficient but provides higher accuracy. Use the operation panel to:
-* Reduce the resolution of the convex hull mesh using the **`Decimate`** slider.
+* Reduce the resolution of the convex hull mesh using the **`Decimation Ratio`** slider.
 * Adjust the **`Mesh Margin`** slider to ensure all parts of the visual object are contained within the collider as mesh resolution is lowered.
 
 ### Alpha Wrap Collider
@@ -118,9 +118,8 @@ Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geomet
 * **`Alpha`**: Size of the probe ball / feature resolution (minimum `0.5%` of bounding box diagonal). In percentage mode, this is a percentage of the bounding box diagonal (default: `2.0%`). In absolute mode, this is in meters, seeded with `2.0%` of the bounding box diagonal of the current selection every time the operator is started. Smaller values capture finer features but increase computation time significantly (halving Alpha roughly increases runtime by 3x to 8x as spatial cell counts scale between `1 / alpha^2` and `1 / alpha^3`).
 * **`Offset`**: Surface offset / expansion distance added to the wrapped mesh (minimum `0.01%` of bounding box diagonal). Default: `0.5%` of the bounding box diagonal, in percent or in meters depending on the mode.
 * **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters). Switching between modes preserves the last entered values for each mode; the absolute values are only re-derived from the bounding box when the operator is started anew.
-* **`Planar Angle`**: Dihedral angle limit in degrees using Blender's built-in Decimate Planar modifier to cleanly dissolve flat coplanar faces without generating overlapping or duplicate geometry (set to `0` to disable).
-* **`Target Faces`**: Optional target face count simplification using Quadric Edge Collapse (set to `0` to disable).
-* **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider (default: off, i.e. one collider for the whole selection).
+* **`Decimation Ratio`**: Fraction of polygons to retain, using the edge-collapse mode of Blender's built-in Decimate modifier (default: `1.0`, i.e. no decimation; `0.1` retains only 10% of the polygons). The resulting polygon count is shown below the slider.
+* **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider (default: off, i.e. one collider for the whole selection). Enabling it switches to `Absolute` mode, seeded with `2.0%` (Alpha) and `0.5%` (Offset) of the bounding box diagonal of the largest selected object. This prevents percentage values from resolving into tiny absolute values on small parts, which would cause extreme processing times.
 
 ### Transform
 Colliders will often need to be adjusted to properly fit the underlying visual objects. Use these tools to manually adjust the colliders.
