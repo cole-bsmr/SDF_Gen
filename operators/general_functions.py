@@ -1,5 +1,4 @@
 import bpy
-import webbrowser
 
 
 def get_all_collections():
@@ -70,12 +69,3 @@ def get_riginstance_objects():
         if obj.object_type == "LinkInstanceObject":
             link_instance_objects.append(obj)
     return link_instance_objects
-
-class ExternalLinkOperator(bpy.types.Operator):
-    bl_idname = "wm.open_external_link"
-    bl_label = "Open STEPper Link"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        webbrowser.open("https://ambient.gumroad.com/l/stepper")
-        return {'FINISHED'}

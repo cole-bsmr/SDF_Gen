@@ -1,5 +1,4 @@
 import bpy
-import addon_utils
 from ..operators.joints import SDFG_OT_CreateJoint
 from ..operators.joints import SDFG_OT_ResetJoints
 from ..operators.render import OBJECT_OT_capture_thumbnail
@@ -20,6 +19,7 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_order = 0
 
     
 
@@ -51,15 +51,9 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
 
             box = layout.box()
             col = box.column()
-            col.label(text="Collections:")
+            col.label(text="Create:")
             col.operator("scene.create_link_collections", text="Create Link")
-            row = col.row()
-            row.operator("scene.create_link_items", text="Visual")
-            row.operator("scene.create_link_items", text="Collision")
-
-            row = layout.row()
-
-            row.operator("scene.create_frame", text="Create Frame")
+            col.operator("scene.create_frame", text="Create Frame")
 
             row = layout.row()
 
@@ -298,15 +292,6 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             box.operator("object.create_light", text="Directional Light").light_type = 'DIRECTIONAL'
 
         elif scene.tab_option == "UTILITIES":
-            # Import
-            box.label(text="Import")
-            is_stepper_enabled = addon_utils.check("STEPper")[1]
-            if is_stepper_enabled:
-                box.operator("import_scene.occ_import_step", text="Import STEP")
-            else:
-                box.label(text="STEPper addon not installed/enabled")
-                box.operator("wm.open_external_link", text="Get STEPper Addon", icon="LIBRARY_DATA_DIRECT")
-
             # Mesh tools
             box.label(text="Mesh tools")
             # Mesh utility buttons
@@ -322,15 +307,6 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             split.prop(bpy.context.scene, "visual_volume", text="")
             split.label(text="cm³")
 
-            row = box.row()
-            # box.prop(bpy.context.scene, "utilities_advanced", text="Advanced", toggle=True)
-            row.prop(context.scene, "utilities_advanced", 
-                    icon="TRIA_DOWN" if context.scene.utilities_advanced else "TRIA_RIGHT", 
-                    icon_only=True, emboss=False)
-            row.label(text="Debug")
-
-            if context.scene.utilities_advanced:
-                box.operator("scene.convert_collections", text="Convert Collections")
 
         elif scene.tab_option == "RENDER":
             col = box.column()

@@ -171,10 +171,16 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
         items=get_link_collections
     )  # type: ignore
 
-    use_geometry_center: bpy.props.BoolProperty(
-        name="Center to Geometry",
-        description="Place the frame at the geometry center instead of the object origin",
-        default=False
+    placement_target: bpy.props.EnumProperty(
+        name="Center To",
+        description="Choose where to position the frame",
+        items=[
+            ("OBJECT_ORIGIN", "Active Object Origin", "Place the frame at the active object's origin"),
+            ("GEOMETRY_CENTER", "Active Object Geometry Center", "Place the frame at the active object's geometry center"),
+            ("CURSOR", "3D Cursor", "Place the frame at the 3D Cursor location"),
+            ("WORLD_ORIGIN", "World Origin", "Place the frame at the world origin (0, 0, 0)"),
+        ],
+        default="OBJECT_ORIGIN",
     )  # type: ignore
 
     align_to_normal: bpy.props.BoolProperty(
@@ -197,11 +203,11 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
         layout.prop(self, "parent_link")
         layout.separator()
 
-        layout.prop(self, "use_geometry_center")
-
         target = context.edit_object or context.active_object
         if target and target.mode == 'EDIT':
             layout.prop(self, "align_to_normal")
+        else:
+            layout.prop(self, "placement_target")
 
     def execute(self, context):
         parent_link = self.parent_link
@@ -222,8 +228,8 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
         origin_location = Vector((0.0, 0.0, 0.0))
         rot_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
 
+        # Display size fallback from object bounds if active object is a mesh
         if active_obj and active_obj.type == 'MESH':
-            # Display size fallback from object bounds
             try:
                 valid_dimensions = [dim for dim in active_obj.dimensions if dim > 0.0001]
                 if valid_dimensions:
@@ -231,67 +237,82 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
             except AttributeError:
                 pass
 
-            # Helper to calculate geometry bounding center in world space
-            def get_geometry_center(obj):
-                if obj.bound_box:
-                    bbox_center = sum((Vector(b) for b in obj.bound_box), Vector((0.0, 0.0, 0.0))) / 8.0
-                    return obj.matrix_world @ bbox_center
+        # Helper to calculate geometry bounding center in world space
+        def get_geometry_center(obj):
+            if obj and getattr(obj, "bound_box", None):
+                bbox_center = sum((Vector(b) for b in obj.bound_box), Vector((0.0, 0.0, 0.0))) / 8.0
+                return obj.matrix_world @ bbox_center
+            if obj:
                 return obj.matrix_world.translation
+            return Vector((0.0, 0.0, 0.0))
 
-            # --- EDIT MODE ---
-            if active_obj.mode == 'EDIT':
-                bm = bmesh.from_edit_mesh(active_obj.data)
-                bm.verts.ensure_lookup_table()
-                bm.faces.ensure_lookup_table()
-                bm.normal_update()
-                
-                selected_verts = [v for v in bm.verts if v.select]
-                selected_faces = [f for f in bm.faces if f.select]
+        # --- EDIT MODE ---
+        if active_obj and active_obj.type == 'MESH' and active_obj.mode == 'EDIT':
+            bm = bmesh.from_edit_mesh(active_obj.data)
+            bm.verts.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bm.normal_update()
+            
+            selected_verts = [v for v in bm.verts if v.select]
+            selected_faces = [f for f in bm.faces if f.select]
 
-                if selected_verts:
-                    # If geometry center is checked, compute the center of the full mesh bounds,
-                    # otherwise use the median location of the current selection.
-                    if self.use_geometry_center:
-                        origin_location = get_geometry_center(active_obj)
+            if selected_verts:
+                local_center = sum((v.co for v in selected_verts), Vector((0.0, 0.0, 0.0))) / len(selected_verts)
+                origin_location = active_obj.matrix_world @ local_center
+
+                # Orientation (World Z-up vs Surface Normal)
+                if self.align_to_normal:
+                    if selected_faces:
+                        local_normal = sum((f.normal for f in selected_faces), Vector((0.0, 0.0, 0.0)))
                     else:
-                        local_center = sum((v.co for v in selected_verts), Vector((0.0, 0.0, 0.0))) / len(selected_verts)
-                        origin_location = active_obj.matrix_world @ local_center
+                        local_normal = sum((v.normal for v in selected_verts), Vector((0.0, 0.0, 0.0)))
 
-                    # Orientation (World Z-up vs Surface Normal)
-                    if self.align_to_normal:
-                        if selected_faces:
-                            local_normal = sum((f.normal for f in selected_faces), Vector((0.0, 0.0, 0.0)))
-                        else:
-                            local_normal = sum((v.normal for v in selected_verts), Vector((0.0, 0.0, 0.0)))
-
-                        if local_normal.length > 1e-6:
-                            local_normal.normalize()
-                        else:
-                            local_normal = Vector((0.0, 0.0, 1.0))
-
-                        # Transform normal into world space
-                        normal_matrix = active_obj.matrix_world.to_3x3().inverted().transposed()
-                        world_normal = (normal_matrix @ local_normal).normalized()
-                        
-                        # Build orthonormal basis (Z = normal)
-                        z_axis = world_normal
-                        up = Vector((0.0, 1.0, 0.0)) if abs(z_axis.z) > 0.99 else Vector((0.0, 0.0, 1.0))
-                        x_axis = up.cross(z_axis).normalized()
-                        y_axis = z_axis.cross(x_axis).normalized()
-                        
-                        rot_matrix = Matrix((x_axis, y_axis, z_axis)).transposed()
-                        rot_quaternion = rot_matrix.to_quaternion()
+                    if local_normal.length > 1e-6:
+                        local_normal.normalize()
                     else:
-                        # World alignment (Z straight up)
-                        rot_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+                        local_normal = Vector((0.0, 0.0, 1.0))
+
+                    # Transform normal into world space
+                    normal_matrix = active_obj.matrix_world.to_3x3().inverted().transposed()
+                    world_normal = (normal_matrix @ local_normal).normalized()
+                    
+                    # Build orthonormal basis (Z = normal)
+                    z_axis = world_normal
+                    up = Vector((0.0, 1.0, 0.0)) if abs(z_axis.z) > 0.99 else Vector((0.0, 0.0, 1.0))
+                    x_axis = up.cross(z_axis).normalized()
+                    y_axis = z_axis.cross(x_axis).normalized()
+                    
+                    rot_matrix = Matrix((x_axis, y_axis, z_axis)).transposed()
+                    rot_quaternion = rot_matrix.to_quaternion()
                 else:
-                    origin_location = get_geometry_center(active_obj) if self.use_geometry_center else active_obj.matrix_world.translation
-                    rot_quaternion = active_obj.matrix_world.to_quaternion()
-
-            # --- OBJECT MODE ---
+                    # World alignment (Z straight up)
+                    rot_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
             else:
-                origin_location = get_geometry_center(active_obj) if self.use_geometry_center else active_obj.matrix_world.translation
+                origin_location = active_obj.matrix_world.translation
                 rot_quaternion = active_obj.matrix_world.to_quaternion()
+
+        # --- OBJECT MODE ---
+        else:
+            if self.placement_target == 'WORLD_ORIGIN':
+                origin_location = Vector((0.0, 0.0, 0.0))
+                rot_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+            elif self.placement_target == 'CURSOR':
+                origin_location = context.scene.cursor.matrix.translation.copy()
+                rot_quaternion = context.scene.cursor.matrix.to_quaternion()
+            elif self.placement_target == 'GEOMETRY_CENTER':
+                if active_obj:
+                    origin_location = get_geometry_center(active_obj)
+                    rot_quaternion = active_obj.matrix_world.to_quaternion()
+                else:
+                    origin_location = Vector((0.0, 0.0, 0.0))
+                    rot_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+            else:  # 'OBJECT_ORIGIN'
+                if active_obj:
+                    origin_location = active_obj.matrix_world.translation.copy()
+                    rot_quaternion = active_obj.matrix_world.to_quaternion()
+                else:
+                    origin_location = Vector((0.0, 0.0, 0.0))
+                    rot_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
 
         # Create the Empty
         new_empty = bpy.data.objects.new(empty_name, None)
@@ -315,6 +336,16 @@ class SDFG_OT_CreateFrameOperator(bpy.types.Operator):
 
         if new_empty.name not in scene_collection.objects:
             scene_collection.objects.link(new_empty)
+
+        # Switch to OBJECT mode if needed so the new frame can be selected
+        if context.mode != 'OBJECT' and bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        for obj in list(context.selected_objects):
+            obj.select_set(False)
+
+        new_empty.select_set(True)
+        context.view_layer.objects.active = new_empty
 
         return {"FINISHED"}
 

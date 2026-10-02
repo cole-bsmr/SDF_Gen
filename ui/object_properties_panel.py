@@ -3,11 +3,12 @@ from ..operators.joints import JointBoneProperties
 
 
 class SDFG_PT_LinkPropertiesPanel(bpy.types.Panel):
-    bl_label = "Link Properties Panel"
+    bl_label = "Link Properties"
     bl_idname = "SDFG_PT_LinkPropertiesPanel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_parent_id = "SDFG_PT_CreatePanel"
 
     @classmethod
     def poll(cls, context):
@@ -29,11 +30,12 @@ class SDFG_PT_LinkPropertiesPanel(bpy.types.Panel):
         split.prop(context.collection.link_grp, 'is_static', text="")
 
 class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
-    bl_label = "Visual Properties Panel"
+    bl_label = "Visual Properties"
     bl_idname = "SDFG_PT_VisualPropertiesPanel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_parent_id = "SDFG_PT_CreatePanel"
 
     @classmethod
     def poll(cls, context):
@@ -68,14 +70,55 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         else:
             layout.operator("object.modifier_add", text="Decimate Mesh").type = 'DECIMATE'
         
-        if context.object.modifiers.get('Smooth by Angle'):
+        smooth_mod = context.object.modifiers.get('Smooth by Angle')
+        if not smooth_mod:
+            for m in context.object.modifiers:
+                if m.type == 'NODES' and m.node_group and m.node_group.name.startswith('Smooth by Angle'):
+                    smooth_mod = m
+                    break
+
+        if smooth_mod:
             box = layout.box()
             box.label(text="Smooth Mesh")
-            box.prop(context.object.modifiers['Smooth by Angle'], '["Input_1"]', text="Smooth Angle")
-            row = box.row()
-            row.label(text="Ignore Sharpness:")
-            row.prop(context.object.modifiers['Smooth by Angle'], '["Socket_1"]', text="")
 
+            # Blender 5.0+ Geometry Nodes Modifier Interface
+            if hasattr(smooth_mod, "properties") and hasattr(smooth_mod.properties, "inputs"):
+                inputs = smooth_mod.properties.inputs
+                angle_input = getattr(inputs, "Input_1", None)
+                sharp_input = getattr(inputs, "Socket_1", None)
+
+                if (not angle_input or not sharp_input) and smooth_mod.node_group:
+                    for item in smooth_mod.node_group.interface.items_tree:
+                        if getattr(item, "item_type", "") == 'SOCKET' and getattr(item, "in_out", "") == 'INPUT':
+                            if item.name == 'Angle' and not angle_input:
+                                angle_input = getattr(inputs, item.identifier, None)
+                            elif item.name == 'Ignore Sharpness' and not sharp_input:
+                                sharp_input = getattr(inputs, item.identifier, None)
+
+                if angle_input and hasattr(angle_input, "value"):
+                    box.prop(angle_input, "value", text="Smooth Angle")
+                if sharp_input and hasattr(sharp_input, "value"):
+                    row = box.row()
+                    row.label(text="Ignore Sharpness:")
+                    row.prop(sharp_input, "value", text="")
+            else:
+                # Blender 4.x IDProperties
+                angle_prop = '["Input_1"]'
+                sharp_prop = '["Socket_1"]'
+                if smooth_mod.node_group:
+                    for item in smooth_mod.node_group.interface.items_tree:
+                        if getattr(item, "item_type", "") == 'SOCKET' and getattr(item, "in_out", "") == 'INPUT':
+                            if item.name == 'Angle':
+                                angle_prop = f'["{item.identifier}"]'
+                            elif item.name == 'Ignore Sharpness':
+                                sharp_prop = f'["{item.identifier}"]'
+                try:
+                    box.prop(smooth_mod, angle_prop, text="Smooth Angle")
+                    row = box.row()
+                    row.label(text="Ignore Sharpness:")
+                    row.prop(smooth_mod, sharp_prop, text="")
+                except Exception:
+                    pass
         else:
             layout.operator("object.shade_auto_smooth", text="Smooth Mesh")
 
@@ -91,6 +134,7 @@ class SDFG_PT_JointPropertiesPanel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_parent_id = "SDFG_PT_CreatePanel"
 
     @classmethod
     def poll(cls, context):
@@ -149,6 +193,7 @@ class SDFG_PT_LightPropertiesPanel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_parent_id = "SDFG_PT_CreatePanel"
 
     @classmethod
     def poll(cls, context):
@@ -188,6 +233,7 @@ class SDFG_PT_FramePropertiesPanel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_parent_id = "SDFG_PT_CreatePanel"
 
     @classmethod
     def poll(cls, context):
@@ -225,6 +271,7 @@ class SDFG_PT_ColliderPropertiesPanel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SDF_Gen"
+    bl_parent_id = "SDFG_PT_CreatePanel"
 
     @classmethod
     def poll(cls, context):

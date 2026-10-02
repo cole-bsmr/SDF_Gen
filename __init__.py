@@ -26,6 +26,7 @@ from .operators.joints import JointBoneProperties
     
 
 def register():
+    auto_load.init()
     auto_load.register()
     bpy.types.WindowManager.my_list_index = bpy.props.IntProperty(update=update_scene)
     """keymaps = bpy.context.window_manager.keyconfigs.addon.keymaps.new(
