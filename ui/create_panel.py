@@ -9,6 +9,7 @@ from ..operators.general_functions import get_armature
 from ..operators.general_functions import get_instances_collection
 from ..operators.create import switch_to_viewlayer
 from ..operators.alpha_wrap import is_pymeshlab_available
+from ..operators.coacd_worker import is_coacd_available
 
 # bpy.types.Scene.armature_found = bpy.props.BoolProperty(default=False)
 
@@ -108,6 +109,49 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
                 col.operator("mesh.install_pymeshlab", text="Alpha Wrap")
             else:
                 col.operator("mesh.create_alpha_wrap_collider", text="Alpha Wrap")
+
+            # Convex Decomposition (CoACD)
+            installing_coacd = getattr(context.window_manager, "coacd_installing", False)
+            if installing_coacd:
+                coacd_status = (
+                    getattr(context.window_manager, "coacd_install_status", "")
+                    or "Installing CoACD..."
+                )
+                col.operator(
+                    "mesh.install_coacd",
+                    text=coacd_status,
+                    icon="TIME",
+                )
+            elif not is_coacd_available():
+                col.operator("mesh.install_coacd", text="Convex Decomposition")
+            else:
+                decomp_box = col.box()
+                header_row = decomp_box.row(align=True)
+                header_row.prop(
+                    context.scene,
+                    "coacd_expand",
+                    text="Convex Decomposition",
+                    icon="TRIA_DOWN" if context.scene.coacd_expand else "TRIA_RIGHT",
+                    icon_only=False,
+                    emboss=False,
+                )
+                if context.scene.coacd_expand:
+                    decomp_col = decomp_box.column(align=True)
+                    decomp_col.prop(context.scene, "coacd_preset", text="Preset")
+                    decomp_col.separator()
+                    decomp_col.prop(context.scene, "coacd_threshold", text="Threshold")
+                    decomp_col.prop(context.scene, "coacd_max_convex_hull", text="Max Hulls")
+                    decomp_col.prop(context.scene, "coacd_preprocess_mode", text="Preprocess")
+                    decomp_col.prop(context.scene, "coacd_decimate_mod_ratio", text="Decimation")
+                    decomp_col.prop(context.scene, "coacd_mesh_inflate", text="Mesh Margin")
+
+                    run_row = decomp_box.row()
+                    op = run_row.operator("mesh.create_convex_decomposition", text="Run")
+                    op.threshold = context.scene.coacd_threshold
+                    op.max_convex_hull = context.scene.coacd_max_convex_hull
+                    op.preprocess_mode = context.scene.coacd_preprocess_mode
+                    op.decimate_mod_ratio = context.scene.coacd_decimate_mod_ratio
+                    op.mesh_inflate = context.scene.coacd_mesh_inflate
 
             col = box.column()
             col.label(text="Transform:")

@@ -12,8 +12,15 @@ import subprocess
 import mathutils
 import hashlib
 import shutil
+import random
+import colorsys
 from ..operators.general_functions import show_message_box
 from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available, get_blender_python_executable
+from .coacd_worker import (
+    is_coacd_available,
+    _install_coacd_worker,
+    run_coacd_decomposition,
+)
 from .properties import (
     DEFAULT_ALPHA_ABSOLUTE,
     DEFAULT_ALPHA_PERCENTAGE,
@@ -245,19 +252,47 @@ def move_to_collection(visual_obj, collider_obj):
 
 
 
-def SetColliderMaterial():
-    """Assigns a transparent material to the given object."""
-    # Set object's visibility settins for 'Solid' shading mode
-    bpy.context.view_layer.objects.active.show_wire = True
-    bpy.context.view_layer.objects.active.color = (1.0, 0.0, 1.0, 0.5)
+def get_random_collider_color(index=None, seed=None, alpha=0.5):
+    """
+    Generates a visually distinct RGBA color for viewport display.
+    Uses golden ratio hue distribution for high contrast between adjacent parts.
+    """
+    if seed is None:
+        seed = random.random()
+    if index is None:
+        hue = (seed + random.random()) % 1.0
+    else:
+        # Golden ratio conjugate ~ 0.618033988749895 ensures max distance between consecutive indices
+        hue = (seed + index * 0.618033988749895) % 1.0
+
+    sat = 0.75 + (index % 3 if index is not None else 0) * 0.08
+    val = 0.90 - (index % 2 if index is not None else 0) * 0.08
+    r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+    return (r, g, b, alpha)
+
+
+DEFAULT_COLLIDER_COLOR = (1.0, 0.0, 1.0, 0.5)
+
+
+def SetColliderMaterial(color=None, update_viewport_shading=True):
+    """Assigns a transparent material to the given object and sets viewport display color."""
+    # Set object's visibility settings for 'Solid' shading mode
+    active_obj = bpy.context.view_layer.objects.active
+    if active_obj:
+        active_obj.show_wire = True
+        if color is not None:
+            active_obj.color = color
+        else:
+            active_obj.color = DEFAULT_COLLIDER_COLOR
 
     # Set shading mode to 'Object'
-    for area in bpy.context.screen.areas:
-        if area.type == "VIEW_3D":
-            for space in area.spaces:
-                if space.type == "VIEW_3D":
-                    # Set viewport shading to 'OBJECT'
-                    space.shading.color_type = "OBJECT"
+    if update_viewport_shading and getattr(bpy.context, "screen", None):
+        for area in bpy.context.screen.areas:
+            if area.type == "VIEW_3D":
+                for space in area.spaces:
+                    if space.type == "VIEW_3D":
+                        # Set viewport shading to 'OBJECT'
+                        space.shading.color_type = "OBJECT"
 
     # Check if the material already exists
     material_name = "ColliderMaterial"
@@ -650,7 +685,7 @@ def get_selected_mesh_objects():
         if obj in seen:
             return
         seen.add(obj)
-        # Filter out existing colliders
+        # Filter out existing colliders and detail boxes
         is_collider = (
             getattr(obj, "object_type", "") == "ColliderObject"
             or getattr(obj, "collider_type", "NotCollider") != "NotCollider"
@@ -1581,5 +1616,505 @@ class MESH_OT_install_pymeshlab(bpy.types.Operator):
         tag_redraw_view3d()
         self.report({"INFO"}, "PyMeshLab installation started in background...")
         return {"FINISHED"}
+
+
+def setup_decomposition_collider(
+    collider_obj,
+    visual_obj,
+    target_name,
+    decimate_mod_ratio=1.0,
+    source_visual_names=None,
+    color=None,
+    mesh_inflate=0.0,
+):
+    """Configures a decomposed mesh piece as a Convex Decomposition collider."""
+    bpy.context.view_layer.objects.active = collider_obj
+
+    # Add decimate modifier for mesh collider polygon count reduction
+    cm_mod = collider_obj.modifiers.new(
+        name="Decimation Ratio", type="DECIMATE"
+    )
+    cm_mod.ratio = decimate_mod_ratio
+
+    collider_obj.object_type = "ColliderObject"
+    collider_obj.collider_type = "MeshCollider"
+
+    # Ensure object is linked to scene collection before moving
+    if collider_obj.name not in bpy.context.scene.collection.objects:
+        bpy.context.scene.collection.objects.link(collider_obj)
+    for col in list(collider_obj.users_collection):
+        if col != bpy.context.scene.collection:
+            col.objects.unlink(collider_obj)
+
+    # Move to the appropriate _colliders collection
+    if visual_obj:
+        move_to_collection(visual_obj, collider_obj)
+
+    # Set collider material and wireframe display
+    SetColliderMaterial(color=color, update_viewport_shading=False)
+
+    # Set final collider name and metadata
+    collider_obj.name = target_name
+    collider_obj["collider_method"] = "DECOMPOSITION"
+    if visual_obj:
+        collider_obj["source_visual"] = visual_obj.name
+    if source_visual_names:
+        collider_obj["source_visuals"] = list(source_visual_names)
+
+    # Add mesh collider margin modifier (matches convex hull)
+    margin_mod = collider_obj.modifiers.new(
+        name="Mesh Collider Margin", type="SOLIDIFY"
+    )
+    margin_mod.offset = 1.0
+    margin_mod.use_rim_only = True
+    margin_mod.use_even_offset = True
+    margin_mod.thickness = mesh_inflate * 0.001
+
+
+def _remove_existing_decomposition_colliders(visual_names):
+    """Removes previously generated decomposition collider objects for the specified visual objects."""
+    to_remove = []
+    for obj in bpy.data.objects:
+        if getattr(obj, "object_type", "") == "ColliderObject":
+            if obj.get("collider_method") == "DECOMPOSITION":
+                if obj.get("source_visual") in visual_names:
+                    to_remove.append(obj)
+                elif any(v in obj.get("source_visuals", []) for v in visual_names):
+                    to_remove.append(obj)
+            elif any(obj.name.startswith(f"col_{v}_") for v in visual_names):
+                to_remove.append(obj)
+
+    for obj in to_remove:
+        mesh_data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if mesh_data and mesh_data.users == 0:
+            bpy.data.meshes.remove(mesh_data)
+
+
+
+def _create_coacd_install_timer_callback(state):
+    """Timer callback to monitor CoACD installation on the main thread."""
+    def timer_callback():
+        wm = bpy.context.window_manager
+        if not state.get("is_done", False):
+            return 0.1
+
+        if wm:
+            wm.coacd_installing = False
+            wm.coacd_install_status = ""
+
+        tag_redraw_view3d()
+
+        if state.get("success", False):
+            show_message_box(
+                message="CoACD was installed successfully!\nConvex Decomposition colliders are now available.",
+                title="Installation Complete",
+                icon="INFO",
+            )
+        else:
+            err = state.get("error", "Unknown error occurred.")
+            show_message_box(
+                message=f"Failed to install CoACD:\n{err}",
+                title="Installation Failed",
+                icon="ERROR",
+            )
+
+        tag_redraw_view3d()
+        return None
+
+    return timer_callback
+
+
+class MESH_OT_install_coacd(bpy.types.Operator):
+    bl_idname = "mesh.install_coacd"
+    bl_label = "CoACD Required"
+    bl_description = "Install CoACD library into Blender's Python environment to enable Convex Decomposition"
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    def invoke(self, context, event):
+        if getattr(context.window_manager, "coacd_installing", False):
+            self.report({"WARNING"}, "CoACD installation is already in progress.")
+            return {"CANCELLED"}
+
+        if is_coacd_available():
+            self.report({"INFO"}, "CoACD is already installed.")
+            return {"CANCELLED"}
+
+        return context.window_manager.invoke_props_dialog(self, width=420)
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(
+            text="CoACD is required for convex decomposition collision generation.",
+            icon="INFO",
+        )
+        col.separator()
+        col.label(text="Would you like to install CoACD?")
+
+    def execute(self, context):
+        wm = context.window_manager
+        if getattr(wm, "coacd_installing", False):
+            self.report({"WARNING"}, "CoACD installation is already in progress.")
+            return {"CANCELLED"}
+
+        if is_coacd_available():
+            self.report({"INFO"}, "CoACD is already installed.")
+            return {"CANCELLED"}
+
+        wm.coacd_installing = True
+        wm.coacd_install_status = "Installing CoACD..."
+
+        state = {
+            "is_done": False,
+            "success": False,
+            "error": None,
+        }
+
+        thread = threading.Thread(
+            target=_install_coacd_worker,
+            args=(state,),
+            daemon=True,
+        )
+        thread.start()
+
+        timer_cb = _create_coacd_install_timer_callback(state)
+        bpy.app.timers.register(timer_cb, first_interval=0.1)
+
+        tag_redraw_view3d()
+        self.report({"INFO"}, "CoACD installation started in background...")
+        return {"FINISHED"}
+
+def get_decomposition_targets(context):
+    """Returns visual mesh objects to decompose.
+    If visual meshes are selected, returns them.
+    If collider objects are selected, resolves them back to their source visual mesh objects."""
+    selected_mesh_objs = [
+        obj
+        for obj in context.selected_objects
+        if obj.type == "MESH"
+        and getattr(obj, "object_type", "") != "ColliderObject"
+    ]
+    if (
+        not selected_mesh_objs
+        and context.active_object
+        and context.active_object.type == "MESH"
+    ):
+        if getattr(context.active_object, "object_type", "") != "ColliderObject":
+            selected_mesh_objs = [context.active_object]
+
+    if selected_mesh_objs:
+        return selected_mesh_objs
+
+    resolved = []
+    seen = set()
+    candidate_objects = list(context.selected_objects)
+    if context.active_object and context.active_object not in candidate_objects:
+        candidate_objects.append(context.active_object)
+
+    for obj in candidate_objects:
+        if getattr(obj, "object_type", "") == "ColliderObject":
+            for sname in obj.get("source_visuals", []):
+                src = bpy.data.objects.get(sname)
+                if src and src.type == "MESH" and src not in seen:
+                    seen.add(src)
+                    resolved.append(src)
+            sname = obj.get("source_visual")
+            if sname:
+                src = bpy.data.objects.get(sname)
+                if src and src.type == "MESH" and src not in seen:
+                    seen.add(src)
+                    resolved.append(src)
+            if obj.name.startswith("col_") and "_part_" in obj.name:
+                vname = obj.name[4:].rsplit("_part_", 1)[0]
+                src = bpy.data.objects.get(vname)
+                if src and src.type == "MESH" and src not in seen:
+                    seen.add(src)
+                    resolved.append(src)
+    return resolved
+
+
+_decomposition_color_timer = None
+
+
+def _create_decomposition_finalize_callback(collider_names):
+    """Timer callback that checks if the Redo (Adjust Last Operation) panel has been closed/finalized.
+    While the panel is open and values are being tweaked, keeps multi-color visible.
+    Once finalized, reverts collider viewport colors back to DEFAULT_COLLIDER_COLOR (pink)."""
+    state = {"ticks": 0}
+
+    def timer_cb():
+        try:
+            state["ticks"] += 1
+
+            # Give Blender a brief moment (0.3s) after execute to populate HUD/operators
+            if state["ticks"] < 2:
+                return 0.2
+
+            hud_active = False
+            if getattr(bpy.context, "screen", None):
+                for area in bpy.context.screen.areas:
+                    if area.type == "VIEW_3D":
+                        for r in area.regions:
+                            if r.type == "HUD" and r.width > 10 and r.height > 10:
+                                hud_active = True
+                                break
+                    if hud_active:
+                        break
+
+            wm = getattr(bpy.context, "window_manager", None)
+            op_active = False
+            if wm and len(wm.operators) > 0:
+                last_op = wm.operators[-1]
+                if getattr(last_op, "bl_idname", "") == "MESH_OT_create_convex_decomposition":
+                    op_active = True
+
+            # If the redo HUD is open and our operator is active in the undo stack, keep multi-color
+            if hud_active and op_active:
+                return 0.2
+
+            # Redo panel has been exited/finalized -> revert to standard pink color
+            for name in collider_names:
+                obj = bpy.data.objects.get(name)
+                if obj and getattr(obj, "object_type", "") == "ColliderObject":
+                    obj.color = DEFAULT_COLLIDER_COLOR
+
+            tag_redraw_view3d()
+            return None
+        except Exception:
+            return None
+
+    return timer_cb
+
+
+class MESH_OT_create_convex_decomposition(bpy.types.Operator):
+    bl_idname = "mesh.create_convex_decomposition"
+    bl_label = "Convex Decomposition"
+    bl_description = "Decompose concave mesh into collision-aware convex hulls using CoACD"
+    bl_options = {"REGISTER", "UNDO"}
+
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description=(
+            "Concavity tolerance for convex decomposition.\n"
+            "Lower values produce more parts and capture finer details;\n"
+            "higher values produce fewer, coarser hulls."
+        ),
+        default=0.2,
+        min=0.01,
+        max=1.0,
+        step=0.01,
+        precision=3,
+    )
+
+    max_convex_hull: bpy.props.IntProperty(
+        name="Max Hulls",
+        description="Maximum number of convex hulls to generate (0 for unlimited).",
+        default=16,
+        min=0,
+        max=128,
+    )
+
+    preprocess_mode: bpy.props.EnumProperty(
+        name="Preprocess Mode",
+        description="Manifold preprocessing mode for CoACD",
+        items=[
+            ("AUTO", "Auto", "Automatically detect and fix non-manifold geometry"),
+            ("ON", "On", "Always voxelize and preprocess mesh to ensure manifold geometry"),
+            ("OFF", "Off", "Disable preprocessing for clean CAD models (fastest)"),
+        ],
+        default="AUTO",
+    )
+
+    decimate_mod_ratio: bpy.props.FloatProperty(
+        name="Decimation Ratio",
+        description="Decimation ratio for the mesh collider. Lower values reduce polygon count.\n"
+        "The value range is [1.0,  0.0) and represents the fraction of polygons to retain.\n"
+        "1.0 means no decimation; 0.1 is an aggressive decimation and only retains 10% of polygons.\n"
+        "The decimation algorithm is the the edge-collapse modifier of Blender's built-in Decimate modifier.\n"
+        "It ranks the edges of the mesh by a cost function and collapses the edges with the least "
+        "impact on the shape of the mesh first.",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        step=0.1,
+    )
+
+    mesh_inflate: bpy.props.FloatProperty(
+        name="Mesh Margin",
+        description="Inflate the collision geometry to account for lower mesh resolution (in mm).",
+        default=0.0,
+        min=0.0,
+        soft_max=10.0,
+        step=10,
+    )
+
+    def invoke(self, context, event):
+        if not is_coacd_available():
+            bpy.ops.mesh.install_coacd("INVOKE_DEFAULT")
+            return {"CANCELLED"}
+
+        selected_mesh_objs = get_decomposition_targets(context)
+        if not selected_mesh_objs:
+            self.report({"WARNING"}, "Please select at least one visual mesh object to decompose.")
+            return {"CANCELLED"}
+
+        # Reset operator properties to scene defaults on new invocation
+        self.threshold = context.scene.coacd_threshold
+        self.max_convex_hull = context.scene.coacd_max_convex_hull
+        self.preprocess_mode = context.scene.coacd_preprocess_mode
+        self.decimate_mod_ratio = getattr(context.scene, "coacd_decimate_mod_ratio", 1.0)
+        self.mesh_inflate = getattr(context.scene, "coacd_mesh_inflate", 0.0)
+
+        return self.execute(context)
+
+    def draw(self, context):
+        col = self.layout.column()
+        box_mods = col.box()
+        box_mods.label(text="Modifiers:", icon="MODIFIER")
+        box_mods.prop(self, "decimate_mod_ratio")
+        box_mods.prop(self, "mesh_inflate")
+
+        poly_count = _get_selected_colliders_poly_count(context)
+        selected_colliders = [
+            obj for obj in context.selected_objects
+            if getattr(obj, "object_type", "") == "ColliderObject"
+        ]
+        col.label(text=f"Parts: {len(selected_colliders)} | Polygons: {poly_count:,}")
+
+    def execute(self, context):
+        if not is_coacd_available():
+            bpy.ops.mesh.install_coacd("INVOKE_DEFAULT")
+            return {"CANCELLED"}
+
+        context.view_layer.update()
+
+        # Adopt scene properties if not explicitly overridden by operator caller
+        props = getattr(self, "properties", None)
+        has_set = getattr(props, "is_property_set", None) if props else None
+
+        if has_set:
+            if not has_set("threshold") and hasattr(context.scene, "coacd_threshold"):
+                self.threshold = context.scene.coacd_threshold
+            if not has_set("max_convex_hull") and hasattr(context.scene, "coacd_max_convex_hull"):
+                self.max_convex_hull = context.scene.coacd_max_convex_hull
+            if not has_set("preprocess_mode") and hasattr(context.scene, "coacd_preprocess_mode"):
+                self.preprocess_mode = context.scene.coacd_preprocess_mode
+            if not has_set("decimate_mod_ratio") and hasattr(context.scene, "coacd_decimate_mod_ratio"):
+                self.decimate_mod_ratio = context.scene.coacd_decimate_mod_ratio
+            if not has_set("mesh_inflate") and hasattr(context.scene, "coacd_mesh_inflate"):
+                self.mesh_inflate = context.scene.coacd_mesh_inflate
+        else:
+            if hasattr(context.scene, "coacd_threshold"):
+                self.threshold = context.scene.coacd_threshold
+            if hasattr(context.scene, "coacd_max_convex_hull"):
+                self.max_convex_hull = context.scene.coacd_max_convex_hull
+            if hasattr(context.scene, "coacd_preprocess_mode"):
+                self.preprocess_mode = context.scene.coacd_preprocess_mode
+            if hasattr(context.scene, "coacd_decimate_mod_ratio"):
+                self.decimate_mod_ratio = context.scene.coacd_decimate_mod_ratio
+            if hasattr(context.scene, "coacd_mesh_inflate"):
+                self.mesh_inflate = context.scene.coacd_mesh_inflate
+
+        # Sync scene properties
+        context.scene.coacd_threshold = self.threshold
+        context.scene.coacd_max_convex_hull = self.max_convex_hull
+        context.scene.coacd_preprocess_mode = self.preprocess_mode
+        context.scene.coacd_decimate_mod_ratio = self.decimate_mod_ratio
+        context.scene.coacd_mesh_inflate = self.mesh_inflate
+
+        selected_mesh_objs = get_decomposition_targets(context)
+        if not selected_mesh_objs:
+            self.report({"WARNING"}, "No visual mesh objects selected.")
+            return {"CANCELLED"}
+
+        target_names = [obj.name for obj in selected_mesh_objs]
+        _remove_existing_decomposition_colliders(target_names)
+
+        created_colliders = []
+
+        try:
+            # Deterministic seed so hull colors stay consistent while tweaking decimation/margin sliders
+            seed_str = "_".join(sorted(target_names))
+            run_seed = (abs(hash(seed_str)) % 1000000) / 1000000.0
+            part_counter = 0
+
+            for visual_obj in selected_mesh_objs:
+                parts = run_coacd_decomposition(
+                    visual_obj=visual_obj,
+                    threshold=self.threshold,
+                    max_convex_hull=self.max_convex_hull,
+                    preprocess_mode=self.preprocess_mode,
+                )
+                for i, (part_verts, part_faces) in enumerate(parts):
+                    part_name = f"col_{visual_obj.name}_part_{i}"
+                    mesh_data = bpy.data.meshes.new(part_name)
+                    mesh_data.from_pydata(
+                        part_verts.tolist(), [], part_faces.tolist()
+                    )
+                    mesh_data.update()
+
+                    collider_obj = bpy.data.objects.new(part_name, mesh_data)
+                    if visual_obj.parent:
+                        collider_obj.parent = visual_obj.parent
+                        collider_obj.parent_type = visual_obj.parent_type
+                        collider_obj.matrix_parent_inverse = (
+                            visual_obj.matrix_parent_inverse.copy()
+                        )
+                    collider_obj.matrix_world = visual_obj.matrix_world.copy()
+                    bpy.context.scene.collection.objects.link(collider_obj)
+
+                    part_color = get_random_collider_color(index=part_counter, seed=run_seed)
+                    part_counter += 1
+
+                    setup_decomposition_collider(
+                        collider_obj=collider_obj,
+                        visual_obj=visual_obj,
+                        target_name=part_name,
+                        decimate_mod_ratio=self.decimate_mod_ratio,
+                        source_visual_names=[visual_obj.name],
+                        color=part_color,
+                        mesh_inflate=self.mesh_inflate,
+                    )
+                    created_colliders.append(collider_obj)
+
+        except Exception as e:
+            self.report({"ERROR"}, f"Convex decomposition failed: {e}")
+            return {"CANCELLED"}
+
+        # Select created colliders so they are immediately highlighted
+        bpy.ops.object.select_all(action="DESELECT")
+        for col_obj in created_colliders:
+            col_obj.select_set(True)
+        if created_colliders:
+            context.view_layer.objects.active = created_colliders[0]
+
+        # Ensure viewport shading mode is OBJECT once for multi-color display
+        if getattr(context, "screen", None):
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            space.shading.color_type = "OBJECT"
+
+        # Register timer to revert colliders to default pink once the last operation panel is finalized/closed
+        if not bpy.app.background and created_colliders:
+            global _decomposition_color_timer
+            if _decomposition_color_timer and bpy.app.timers.is_registered(_decomposition_color_timer):
+                try:
+                    bpy.app.timers.unregister(_decomposition_color_timer)
+                except Exception:
+                    pass
+            created_names = [c.name for c in created_colliders]
+            _decomposition_color_timer = _create_decomposition_finalize_callback(created_names)
+            bpy.app.timers.register(_decomposition_color_timer, first_interval=0.2)
+
+        self.report(
+            {"INFO"},
+            f"Convex decomposition generated {len(created_colliders)} convex hull collider(s)."
+        )
+        return {"FINISHED"}
+
+
 
 

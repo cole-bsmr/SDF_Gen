@@ -43,7 +43,7 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         if not context.selected_objects:
             return False
 
-        if not context.selected_ids:
+        if hasattr(context, "selected_ids") and not context.selected_ids:
             return False
         
         if not context.object.type == 'MESH':
@@ -51,7 +51,6 @@ class SDFG_PT_VisualPropertiesPanel(bpy.types.Panel):
         
         if context.active_object.object_type == "ColliderObject":
             return False
-
         return True
 
     def draw(self, context):
@@ -263,4 +262,6 @@ class SDFG_PT_ColliderPropertiesPanel(bpy.types.Panel):
                 box.label(text=f"Polygons: {poly_count:,}")
             except Exception:
                 pass
+
+
 
