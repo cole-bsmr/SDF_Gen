@@ -35,29 +35,32 @@ The add-on panel will appear in the 3D Viewport sidebar (**N** key) under the **
 
 ---
 
-### 2. Optional Dependencies (Alpha Wrap Collider)
+### 2. Optional Dependencies (Alpha Wrap & Convex Decomposition)
 
-The **Alpha Wrap** collider generator requires [PyMeshLab](https://github.com/cnr-isti-vclab/PyMeshLab) to produce watertight, shrink-wrapped collision meshes.
+* The **Alpha Wrap** collider generator requires [PyMeshLab](https://github.com/cnr-isti-vclab/PyMeshLab) to produce watertight, shrink-wrapped collision meshes.
+* The **Convex Decomposition** generator requires [CoACD](https://github.com/SarahWeiii/CoACD) to decompose complex concave meshes into collision-aware convex hulls.
 
 * **In-Addon One-Click Install (Recommended):**
-  In the **Colliders** tab, locate the **Alpha Wrap** section and click the **`Install PyMeshLab`** button. Confirm the dialog prompt, and the add-on will automatically download and install PyMeshLab in the background. Once finished, the Alpha Wrap menu will immediately appear.
+  * In the **Colliders** tab, locate **Alpha Wrap** and click **`Alpha Wrap`** if PyMeshLab is not yet installed.
+  * For convex decomposition, locate **Convex Decomposition** and click the button if CoACD is not yet installed.
+  Confirm the dialog prompt, and the add-on will automatically download and install the library in the background. Once finished, the tool's menu immediately appears.
 
 * **Manual Installation (Alternative):**
-  You can also install `pymeshlab` manually into **Blender's bundled Python environment**:
+  You can also install `pymeshlab` and `coacd` manually into **Blender's bundled Python environment**:
   * **Linux:**
     ```bash
-    /path/to/blender/<version>/python/bin/python3 -m pip install pymeshlab
+    /path/to/blender/<version>/python/bin/python3 -m pip install pymeshlab coacd
     ```
   * **macOS:**
     ```bash
-    /Applications/Blender.app/Contents/Resources/<version>/python/bin/python3 -m pip install pymeshlab
+    /Applications/Blender.app/Contents/Resources/<version>/python/bin/python3 -m pip install pymeshlab coacd
     ```
   * **Windows:**
     ```cmd
-    "C:\Program Files\Blender Foundation\Blender <version>\<version>\python\bin\python.exe" -m pip install pymeshlab
+    "C:\Program Files\Blender Foundation\Blender <version>\<version>\python\bin\python.exe" -m pip install pymeshlab coacd
     ```
 
-*(Note: Standard primitive colliders and convex hull mesh colliders do not require external dependencies.)*
+*(Note: Standard primitive colliders and single convex hull mesh colliders do not require external dependencies.)*
 
 ---
 
@@ -120,6 +123,27 @@ Creates a watertight, shrink-wrapped 3D alpha-wrap collider around visual geomet
 * **`Mode`**: `Percentage` (relative to bounding box diagonal) or `Absolute` (meters). Switching between modes preserves the last entered values for each mode; the absolute values are only re-derived from the bounding box when the operator is started anew.
 * **`Decimation Ratio`**: Fraction of polygons to retain, using the edge-collapse mode of Blender's built-in Decimate modifier (default: `1.0`, i.e. no decimation; `0.1` retains only 10% of the polygons). The resulting polygon count is shown below the slider.
 * **`Per Object`**: Toggle whether to wrap each selected mesh individually or combine them into a single collider (default: off, i.e. one collider for the whole selection). Enabling it switches to `Absolute` mode, seeded with `2.0%` (Alpha) and `0.5%` (Offset) of the bounding box diagonal of the largest selected object. This prevents percentage values from resolving into tiny absolute values on small parts, which would cause extreme processing times.
+
+### Convex Decomposition (CoACD)
+Decomposes complex concave visual meshes into multiple collision-aware convex hulls using [CoACD](https://github.com/SarahWeiii/CoACD). This provides realistic, contact-accurate physics colliders for robotics simulation without requiring manual mesh slicing. Each selected visual mesh is always decomposed individually.
+
+In the **Colliders** tab, expand the **`Convex Decomposition`** dropdown:
+* **`Preset`**: Quick quality/performance presets:
+  * **`Low (Fast)`**: Threshold `0.35`, Max Hulls `8` (fastest calculation, coarse hulls).
+  * **`Medium (Balanced)`**: Threshold `0.20`, Max Hulls `16` (default; balanced speed and detail).
+  * **`High (Detailed)`**: Threshold `0.05`, Max Hulls `32` (fine geometric detail).
+  * **`Custom`**: Selected automatically when values are manually altered.
+* **`Threshold`**: Concavity tolerance (`0.01` to `1.0`). Lower values produce more parts and capture tighter concavities and cavities.
+* **`Max Hulls`**: Cap on the maximum number of convex hulls generated per object (`0` for unlimited).
+* **`Preprocess`**: Manifold preprocessing mode (`Auto` to detect and repair non-manifold geometry, `On` to force voxelization, or `Off` for clean CAD models).
+* **`Decimation`**: Simplifies the polygon resolution of the resulting hulls.
+* **`Mesh Margin`**: Inflates the collision hulls (in mm) to compensate for low mesh resolution or ensure safe contact clearance.
+* **`Run`**: Executes decomposition on all selected visual meshes.
+
+#### Operation Panel (Live Redo)
+After clicking **`Run`**, use Blender's bottom-left **Adjust Last Operation** panel to fine-tune the colliders in real time:
+* **`Decimation Ratio`** & **`Mesh Margin`**: Adjust modifier parameters with instant, cached live preview (~0.02s).
+* **Multi-Color Visualizer**: During interactive adjustments, each decomposed hull is highlighted in a distinct color for clear visual separation. The colliders automatically revert to standard collider shading once finalized.
 
 ### Transform
 Colliders will often need to be adjusted to properly fit the underlying visual objects. Use these tools to manually adjust the colliders.
