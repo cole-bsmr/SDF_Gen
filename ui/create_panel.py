@@ -10,7 +10,6 @@ from ..operators.general_functions import get_instances_collection
 from ..operators.create import switch_to_viewlayer
 from ..operators.alpha_wrap import is_pymeshlab_available
 from ..operators.coacd_worker import is_coacd_available
-from ..operators.colliders import get_detail_boxes_for_object
 
 # bpy.types.Scene.armature_found = bpy.props.BoolProperty(default=False)
 
@@ -126,25 +125,33 @@ class SDFG_PT_CreateTabs(bpy.types.Panel):
             elif not is_coacd_available():
                 col.operator("mesh.install_coacd", text="Convex Decomposition")
             else:
-                col.operator("mesh.create_convex_decomposition", text="Convex Decomposition")
-                col.operator("mesh.add_decomposition_detail_box", text="Add Detail Box", icon="ADD")
+                decomp_box = col.box()
+                header_row = decomp_box.row(align=True)
+                header_row.prop(
+                    context.scene,
+                    "coacd_expand",
+                    text="Convex Decomposition",
+                    icon="TRIA_DOWN" if context.scene.coacd_expand else "TRIA_RIGHT",
+                    icon_only=False,
+                    emboss=False,
+                )
+                if context.scene.coacd_expand:
+                    decomp_col = decomp_box.column(align=True)
+                    decomp_col.prop(context.scene, "coacd_preset", text="Preset")
+                    decomp_col.separator()
+                    decomp_col.prop(context.scene, "coacd_threshold", text="Threshold")
+                    decomp_col.prop(context.scene, "coacd_max_convex_hull", text="Max Hulls")
+                    decomp_col.prop(context.scene, "coacd_preprocess_mode", text="Preprocess")
+                    decomp_col.prop(context.scene, "coacd_decimate_mod_ratio", text="Decimation")
+                    decomp_col.prop(context.scene, "coacd_mesh_inflate", text="Mesh Margin")
 
-                active_obj = context.active_object
-                if active_obj and getattr(active_obj, "is_detail_box", False):
-                    box_ui = col.box()
-                    box_ui.label(text=f"Detail Box: {active_obj.name}", icon="CUBE")
-                    box_ui.prop(active_obj, "detail_box_target", text="Target")
-                    box_ui.prop(active_obj, "detail_threshold", text="Threshold")
-                    box_ui.prop(active_obj, "detail_max_convex_hull", text="Max Hulls")
-                    row = box_ui.row()
-                    row.operator("mesh.remove_decomposition_detail_box", text="Delete Detail Box", icon="X").remove_all = False
-                elif active_obj and active_obj.type == "MESH":
-                    boxes = get_detail_boxes_for_object(active_obj)
-                    if boxes:
-                        box_ui = col.box()
-                        box_ui.label(text=f"Detail Boxes ({len(boxes)})", icon="SNAP_VOLUME")
-                        row = box_ui.row()
-                        row.operator("mesh.remove_decomposition_detail_box", text="Clear All Boxes", icon="TRASH").remove_all = True
+                    run_row = decomp_box.row()
+                    op = run_row.operator("mesh.create_convex_decomposition", text="Run")
+                    op.threshold = context.scene.coacd_threshold
+                    op.max_convex_hull = context.scene.coacd_max_convex_hull
+                    op.preprocess_mode = context.scene.coacd_preprocess_mode
+                    op.decimate_mod_ratio = context.scene.coacd_decimate_mod_ratio
+                    op.mesh_inflate = context.scene.coacd_mesh_inflate
 
             col = box.column()
             col.label(text="Transform:")

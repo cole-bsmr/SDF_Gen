@@ -12,13 +12,14 @@ import subprocess
 import mathutils
 import hashlib
 import shutil
+import random
+import colorsys
 from ..operators.general_functions import show_message_box
 from .alpha_wrap import alpha_wrap_mesh, is_pymeshlab_available, get_blender_python_executable
 from .coacd_worker import (
     is_coacd_available,
     _install_coacd_worker,
     run_coacd_decomposition,
-    run_coacd_decomposition_multi_zone,
 )
 from .properties import (
     DEFAULT_ALPHA_ABSOLUTE,
@@ -251,19 +252,47 @@ def move_to_collection(visual_obj, collider_obj):
 
 
 
-def SetColliderMaterial():
-    """Assigns a transparent material to the given object."""
-    # Set object's visibility settins for 'Solid' shading mode
-    bpy.context.view_layer.objects.active.show_wire = True
-    bpy.context.view_layer.objects.active.color = (1.0, 0.0, 1.0, 0.5)
+def get_random_collider_color(index=None, seed=None, alpha=0.5):
+    """
+    Generates a visually distinct RGBA color for viewport display.
+    Uses golden ratio hue distribution for high contrast between adjacent parts.
+    """
+    if seed is None:
+        seed = random.random()
+    if index is None:
+        hue = (seed + random.random()) % 1.0
+    else:
+        # Golden ratio conjugate ~ 0.618033988749895 ensures max distance between consecutive indices
+        hue = (seed + index * 0.618033988749895) % 1.0
+
+    sat = 0.75 + (index % 3 if index is not None else 0) * 0.08
+    val = 0.90 - (index % 2 if index is not None else 0) * 0.08
+    r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+    return (r, g, b, alpha)
+
+
+DEFAULT_COLLIDER_COLOR = (1.0, 0.0, 1.0, 0.5)
+
+
+def SetColliderMaterial(color=None, update_viewport_shading=True):
+    """Assigns a transparent material to the given object and sets viewport display color."""
+    # Set object's visibility settings for 'Solid' shading mode
+    active_obj = bpy.context.view_layer.objects.active
+    if active_obj:
+        active_obj.show_wire = True
+        if color is not None:
+            active_obj.color = color
+        else:
+            active_obj.color = DEFAULT_COLLIDER_COLOR
 
     # Set shading mode to 'Object'
-    for area in bpy.context.screen.areas:
-        if area.type == "VIEW_3D":
-            for space in area.spaces:
-                if space.type == "VIEW_3D":
-                    # Set viewport shading to 'OBJECT'
-                    space.shading.color_type = "OBJECT"
+    if update_viewport_shading and getattr(bpy.context, "screen", None):
+        for area in bpy.context.screen.areas:
+            if area.type == "VIEW_3D":
+                for space in area.spaces:
+                    if space.type == "VIEW_3D":
+                        # Set viewport shading to 'OBJECT'
+                        space.shading.color_type = "OBJECT"
 
     # Check if the material already exists
     material_name = "ColliderMaterial"
@@ -656,7 +685,7 @@ def get_selected_mesh_objects():
         if obj in seen:
             return
         seen.add(obj)
-        # Filter out existing colliders
+        # Filter out existing colliders and detail boxes
         is_collider = (
             getattr(obj, "object_type", "") == "ColliderObject"
             or getattr(obj, "collider_type", "NotCollider") != "NotCollider"
@@ -1595,6 +1624,8 @@ def setup_decomposition_collider(
     target_name,
     decimate_mod_ratio=1.0,
     source_visual_names=None,
+    color=None,
+    mesh_inflate=0.0,
 ):
     """Configures a decomposed mesh piece as a Convex Decomposition collider."""
     bpy.context.view_layer.objects.active = collider_obj
@@ -1620,7 +1651,7 @@ def setup_decomposition_collider(
         move_to_collection(visual_obj, collider_obj)
 
     # Set collider material and wireframe display
-    SetColliderMaterial()
+    SetColliderMaterial(color=color, update_viewport_shading=False)
 
     # Set final collider name and metadata
     collider_obj.name = target_name
@@ -1630,8 +1661,14 @@ def setup_decomposition_collider(
     if source_visual_names:
         collider_obj["source_visuals"] = list(source_visual_names)
 
-    # Add the margin modifier
-    add_margin_modifier()
+    # Add mesh collider margin modifier (matches convex hull)
+    margin_mod = collider_obj.modifiers.new(
+        name="Mesh Collider Margin", type="SOLIDIFY"
+    )
+    margin_mod.offset = 1.0
+    margin_mod.use_rim_only = True
+    margin_mod.use_even_offset = True
+    margin_mod.thickness = mesh_inflate * 0.001
 
 
 def _remove_existing_decomposition_colliders(visual_names):
@@ -1653,20 +1690,6 @@ def _remove_existing_decomposition_colliders(visual_names):
         if mesh_data and mesh_data.users == 0:
             bpy.data.meshes.remove(mesh_data)
 
-
-def get_detail_boxes_for_object(visual_obj: bpy.types.Object) -> list:
-    """Finds all active detail boxes associated with visual_obj."""
-    boxes = []
-    if not visual_obj:
-        return boxes
-    for obj in bpy.data.objects:
-        if getattr(obj, "is_detail_box", False):
-            if (
-                getattr(obj, "detail_box_target", "") == visual_obj.name
-                or obj.parent == visual_obj
-            ):
-                boxes.append(obj)
-    return boxes
 
 
 def _create_coacd_install_timer_callback(state):
@@ -1762,186 +1785,22 @@ class MESH_OT_install_coacd(bpy.types.Operator):
         self.report({"INFO"}, "CoACD installation started in background...")
         return {"FINISHED"}
 
-
-class MESH_OT_add_decomposition_detail_box(bpy.types.Operator):
-    bl_idname = "mesh.add_decomposition_detail_box"
-    bl_label = "Add Detail Box"
-    bl_description = "Add a detail box Region of Interest for local high-resolution convex decomposition"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        target_obj = None
-        for obj in context.selected_objects:
-            if getattr(obj, "is_detail_box", False):
-                tname = getattr(obj, "detail_box_target", "")
-                target_obj = bpy.data.objects.get(tname) or obj.parent
-                if target_obj:
-                    break
-            elif getattr(obj, "object_type", "") == "ColliderObject":
-                sname = obj.get("source_visual")
-                if sname:
-                    target_obj = bpy.data.objects.get(sname)
-                    if target_obj:
-                        break
-            elif obj.type == "MESH":
-                target_obj = obj
-                break
-
-        if not target_obj and context.active_object:
-            ao = context.active_object
-            if getattr(ao, "is_detail_box", False):
-                target_obj = (
-                    bpy.data.objects.get(getattr(ao, "detail_box_target", ""))
-                    or ao.parent
-                )
-            elif getattr(ao, "object_type", "") == "ColliderObject":
-                target_obj = bpy.data.objects.get(ao.get("source_visual", ""))
-            elif ao.type == "MESH":
-                target_obj = ao
-
-        if not target_obj or target_obj.type != "MESH":
-            self.report(
-                {"WARNING"},
-                "Please select a visual mesh object to add a detail box to.",
-            )
-            return {"CANCELLED"}
-
-        world_pts = [
-            target_obj.matrix_world @ mathutils.Vector(corner)
-            for corner in target_obj.bound_box
-        ]
-        xs = [p.x for p in world_pts]
-        ys = [p.y for p in world_pts]
-        zs = [p.z for p in world_pts]
-        min_pt = mathutils.Vector((min(xs), min(ys), min(zs)))
-        max_pt = mathutils.Vector((max(xs), max(ys), max(zs)))
-        center = (min_pt + max_pt) / 2.0
-        dims = max_pt - min_pt
-
-        box_size = mathutils.Vector((
-            max(dims.x * 0.35, 0.001),
-            max(dims.y * 0.35, 0.001),
-            max(dims.z * 0.35, 0.001),
-        ))
-
-        bm = bmesh.new()
-        bmesh.ops.create_cube(bm, size=1.0)
-        for v in bm.verts:
-            v.co.x *= box_size.x
-            v.co.y *= box_size.y
-            v.co.z *= box_size.z
-
-        existing_boxes = get_detail_boxes_for_object(target_obj)
-        box_num = len(existing_boxes) + 1
-        box_name = f"DetailBox_{target_obj.name}_{box_num}"
-
-        box_mesh = bpy.data.meshes.new(box_name)
-        bm.to_mesh(box_mesh)
-        bm.free()
-
-        box_obj = bpy.data.objects.new(box_name, box_mesh)
-        box_obj.matrix_world = mathutils.Matrix.Translation(center)
-
-        box_obj.parent = target_obj
-        box_obj.matrix_parent_inverse = target_obj.matrix_world.inverted()
-
-        box_obj.display_type = "WIRE"
-        box_obj.show_wire = True
-        box_obj.show_all_edges = True
-
-        if target_obj.users_collection:
-            target_obj.users_collection[0].objects.link(box_obj)
-        else:
-            context.scene.collection.objects.link(box_obj)
-
-        box_obj.is_detail_box = True
-        box_obj.detail_box_target = target_obj.name
-        box_obj.detail_threshold = 0.02
-        box_obj.detail_max_convex_hull = 16
-
-        bpy.ops.object.select_all(action="DESELECT")
-        box_obj.select_set(True)
-        context.view_layer.objects.active = box_obj
-
-        self.report(
-            {"INFO"}, f"Added detail box '{box_name}' for '{target_obj.name}'."
-        )
-        return {"FINISHED"}
-
-
-class MESH_OT_remove_decomposition_detail_box(bpy.types.Operator):
-    bl_idname = "mesh.remove_decomposition_detail_box"
-    bl_label = "Remove Detail Box"
-    bl_description = "Remove the selected detail box (or all detail boxes for target object)"
-    bl_options = {"REGISTER", "UNDO"}
-
-    remove_all: bpy.props.BoolProperty(
-        name="Remove All",
-        description="Remove all detail boxes for the target object",
-        default=False,
-    )
-
-    def execute(self, context):
-        to_delete = []
-        if self.remove_all:
-            target_obj = None
-            for obj in context.selected_objects:
-                if getattr(obj, "is_detail_box", False):
-                    target_name = getattr(obj, "detail_box_target", "")
-                    target_obj = bpy.data.objects.get(target_name) or obj.parent
-                    if target_obj:
-                        break
-                elif obj.type == "MESH":
-                    target_obj = obj
-                    break
-            if target_obj:
-                to_delete = get_detail_boxes_for_object(target_obj)
-        else:
-            for obj in context.selected_objects:
-                if getattr(obj, "is_detail_box", False):
-                    to_delete.append(obj)
-            if (
-                not to_delete
-                and context.active_object
-                and getattr(context.active_object, "is_detail_box", False)
-            ):
-                to_delete.append(context.active_object)
-
-        if not to_delete:
-            self.report({"WARNING"}, "No detail box selected to remove.")
-            return {"CANCELLED"}
-
-        count = len(to_delete)
-        for obj in to_delete:
-            mesh_data = obj.data
-            bpy.data.objects.remove(obj, do_unlink=True)
-            if mesh_data and mesh_data.users == 0:
-                bpy.data.meshes.remove(mesh_data)
-
-        self.report({"INFO"}, f"Removed {count} detail box(es).")
-        return {"FINISHED"}
-
-
 def get_decomposition_targets(context):
     """Returns visual mesh objects to decompose.
     If visual meshes are selected, returns them.
-    If collider objects or detail boxes are selected, resolves them back to their source visual mesh objects."""
+    If collider objects are selected, resolves them back to their source visual mesh objects."""
     selected_mesh_objs = [
         obj
         for obj in context.selected_objects
         if obj.type == "MESH"
         and getattr(obj, "object_type", "") != "ColliderObject"
-        and not getattr(obj, "is_detail_box", False)
     ]
     if (
         not selected_mesh_objs
         and context.active_object
         and context.active_object.type == "MESH"
     ):
-        if (
-            getattr(context.active_object, "object_type", "") != "ColliderObject"
-            and not getattr(context.active_object, "is_detail_box", False)
-        ):
+        if getattr(context.active_object, "object_type", "") != "ColliderObject":
             selected_mesh_objs = [context.active_object]
 
     if selected_mesh_objs:
@@ -1954,13 +1813,7 @@ def get_decomposition_targets(context):
         candidate_objects.append(context.active_object)
 
     for obj in candidate_objects:
-        if getattr(obj, "is_detail_box", False):
-            target_name = getattr(obj, "detail_box_target", "")
-            target_obj = bpy.data.objects.get(target_name) or obj.parent
-            if target_obj and target_obj.type == "MESH" and target_obj not in seen:
-                seen.add(target_obj)
-                resolved.append(target_obj)
-        elif getattr(obj, "object_type", "") == "ColliderObject":
+        if getattr(obj, "object_type", "") == "ColliderObject":
             for sname in obj.get("source_visuals", []):
                 src = bpy.data.objects.get(sname)
                 if src and src.type == "MESH" and src not in seen:
@@ -1974,15 +1827,64 @@ def get_decomposition_targets(context):
                     resolved.append(src)
             if obj.name.startswith("col_") and "_part_" in obj.name:
                 vname = obj.name[4:].rsplit("_part_", 1)[0]
-                if "_detail_" in vname:
-                    vname = vname.split("_detail_")[0]
-                elif "_base" in vname:
-                    vname = vname.rsplit("_base", 1)[0]
                 src = bpy.data.objects.get(vname)
                 if src and src.type == "MESH" and src not in seen:
                     seen.add(src)
                     resolved.append(src)
     return resolved
+
+
+_decomposition_color_timer = None
+
+
+def _create_decomposition_finalize_callback(collider_names):
+    """Timer callback that checks if the Redo (Adjust Last Operation) panel has been closed/finalized.
+    While the panel is open and values are being tweaked, keeps multi-color visible.
+    Once finalized, reverts collider viewport colors back to DEFAULT_COLLIDER_COLOR (pink)."""
+    state = {"ticks": 0}
+
+    def timer_cb():
+        try:
+            state["ticks"] += 1
+
+            # Give Blender a brief moment (0.3s) after execute to populate HUD/operators
+            if state["ticks"] < 2:
+                return 0.2
+
+            hud_active = False
+            if getattr(bpy.context, "screen", None):
+                for area in bpy.context.screen.areas:
+                    if area.type == "VIEW_3D":
+                        for r in area.regions:
+                            if r.type == "HUD" and r.width > 10 and r.height > 10:
+                                hud_active = True
+                                break
+                    if hud_active:
+                        break
+
+            wm = getattr(bpy.context, "window_manager", None)
+            op_active = False
+            if wm and len(wm.operators) > 0:
+                last_op = wm.operators[-1]
+                if getattr(last_op, "bl_idname", "") == "MESH_OT_create_convex_decomposition":
+                    op_active = True
+
+            # If the redo HUD is open and our operator is active in the undo stack, keep multi-color
+            if hud_active and op_active:
+                return 0.2
+
+            # Redo panel has been exited/finalized -> revert to standard pink color
+            for name in collider_names:
+                obj = bpy.data.objects.get(name)
+                if obj and getattr(obj, "object_type", "") == "ColliderObject":
+                    obj.color = DEFAULT_COLLIDER_COLOR
+
+            tag_redraw_view3d()
+            return None
+        except Exception:
+            return None
+
+    return timer_cb
 
 
 class MESH_OT_create_convex_decomposition(bpy.types.Operator):
@@ -1998,7 +1900,7 @@ class MESH_OT_create_convex_decomposition(bpy.types.Operator):
             "Lower values produce more parts and capture finer details;\n"
             "higher values produce fewer, coarser hulls."
         ),
-        default=0.05,
+        default=0.2,
         min=0.01,
         max=1.0,
         step=0.01,
@@ -2038,10 +1940,13 @@ class MESH_OT_create_convex_decomposition(bpy.types.Operator):
         step=0.1,
     )
 
-    per_obj: bpy.props.BoolProperty(
-        name="Per Object",
-        description="Decompose each selected object individually instead of combining them into a single decomposition.",
-        default=True,
+    mesh_inflate: bpy.props.FloatProperty(
+        name="Mesh Margin",
+        description="Inflate the collision geometry to account for lower mesh resolution (in mm).",
+        default=0.0,
+        min=0.0,
+        soft_max=10.0,
+        step=10,
     )
 
     def invoke(self, context, event):
@@ -2058,24 +1963,24 @@ class MESH_OT_create_convex_decomposition(bpy.types.Operator):
         self.threshold = context.scene.coacd_threshold
         self.max_convex_hull = context.scene.coacd_max_convex_hull
         self.preprocess_mode = context.scene.coacd_preprocess_mode
-        self.decimate_mod_ratio = 1.0
-        self.per_obj = context.scene.coacd_per_obj
+        self.decimate_mod_ratio = getattr(context.scene, "coacd_decimate_mod_ratio", 1.0)
+        self.mesh_inflate = getattr(context.scene, "coacd_mesh_inflate", 0.0)
 
         return self.execute(context)
 
     def draw(self, context):
         col = self.layout.column()
-        col.prop(self, "threshold")
-        col.prop(self, "max_convex_hull")
-        col.prop(self, "preprocess_mode")
-        col.prop(self, "decimate_mod_ratio")
+        box_mods = col.box()
+        box_mods.label(text="Modifiers:", icon="MODIFIER")
+        box_mods.prop(self, "decimate_mod_ratio")
+        box_mods.prop(self, "mesh_inflate")
+
         poly_count = _get_selected_colliders_poly_count(context)
         selected_colliders = [
             obj for obj in context.selected_objects
             if getattr(obj, "object_type", "") == "ColliderObject"
         ]
         col.label(text=f"Parts: {len(selected_colliders)} | Polygons: {poly_count:,}")
-        col.prop(self, "per_obj")
 
     def execute(self, context):
         if not is_coacd_available():
@@ -2084,12 +1989,39 @@ class MESH_OT_create_convex_decomposition(bpy.types.Operator):
 
         context.view_layer.update()
 
+        # Adopt scene properties if not explicitly overridden by operator caller
+        props = getattr(self, "properties", None)
+        has_set = getattr(props, "is_property_set", None) if props else None
+
+        if has_set:
+            if not has_set("threshold") and hasattr(context.scene, "coacd_threshold"):
+                self.threshold = context.scene.coacd_threshold
+            if not has_set("max_convex_hull") and hasattr(context.scene, "coacd_max_convex_hull"):
+                self.max_convex_hull = context.scene.coacd_max_convex_hull
+            if not has_set("preprocess_mode") and hasattr(context.scene, "coacd_preprocess_mode"):
+                self.preprocess_mode = context.scene.coacd_preprocess_mode
+            if not has_set("decimate_mod_ratio") and hasattr(context.scene, "coacd_decimate_mod_ratio"):
+                self.decimate_mod_ratio = context.scene.coacd_decimate_mod_ratio
+            if not has_set("mesh_inflate") and hasattr(context.scene, "coacd_mesh_inflate"):
+                self.mesh_inflate = context.scene.coacd_mesh_inflate
+        else:
+            if hasattr(context.scene, "coacd_threshold"):
+                self.threshold = context.scene.coacd_threshold
+            if hasattr(context.scene, "coacd_max_convex_hull"):
+                self.max_convex_hull = context.scene.coacd_max_convex_hull
+            if hasattr(context.scene, "coacd_preprocess_mode"):
+                self.preprocess_mode = context.scene.coacd_preprocess_mode
+            if hasattr(context.scene, "coacd_decimate_mod_ratio"):
+                self.decimate_mod_ratio = context.scene.coacd_decimate_mod_ratio
+            if hasattr(context.scene, "coacd_mesh_inflate"):
+                self.mesh_inflate = context.scene.coacd_mesh_inflate
+
         # Sync scene properties
         context.scene.coacd_threshold = self.threshold
         context.scene.coacd_max_convex_hull = self.max_convex_hull
         context.scene.coacd_preprocess_mode = self.preprocess_mode
         context.scene.coacd_decimate_mod_ratio = self.decimate_mod_ratio
-        context.scene.coacd_per_obj = self.per_obj
+        context.scene.coacd_mesh_inflate = self.mesh_inflate
 
         selected_mesh_objs = get_decomposition_targets(context)
         if not selected_mesh_objs:
@@ -2102,107 +2034,47 @@ class MESH_OT_create_convex_decomposition(bpy.types.Operator):
         created_colliders = []
 
         try:
-            if self.per_obj or len(selected_mesh_objs) == 1:
-                for visual_obj in selected_mesh_objs:
-                    detail_boxes = get_detail_boxes_for_object(visual_obj)
-                    if detail_boxes:
-                        parts = run_coacd_decomposition_multi_zone(
-                            visual_obj=visual_obj,
-                            detail_boxes=detail_boxes,
-                            default_threshold=self.threshold,
-                            default_max_convex_hull=self.max_convex_hull,
-                            preprocess_mode=self.preprocess_mode,
-                        )
-                        for part_suffix, part_verts, part_faces in parts:
-                            part_name = f"col_{visual_obj.name}_{part_suffix}"
-                            mesh_data = bpy.data.meshes.new(part_name)
-                            mesh_data.from_pydata(
-                                part_verts.tolist(), [], part_faces.tolist()
-                            )
-                            mesh_data.update()
+            # Deterministic seed so hull colors stay consistent while tweaking decimation/margin sliders
+            seed_str = "_".join(sorted(target_names))
+            run_seed = (abs(hash(seed_str)) % 1000000) / 1000000.0
+            part_counter = 0
 
-                            collider_obj = bpy.data.objects.new(part_name, mesh_data)
-                            if visual_obj.parent:
-                                collider_obj.parent = visual_obj.parent
-                                collider_obj.parent_type = visual_obj.parent_type
-                                collider_obj.matrix_parent_inverse = (
-                                    visual_obj.matrix_parent_inverse.copy()
-                                )
-                            collider_obj.matrix_world = visual_obj.matrix_world.copy()
-                            bpy.context.scene.collection.objects.link(collider_obj)
-
-                            setup_decomposition_collider(
-                                collider_obj=collider_obj,
-                                visual_obj=visual_obj,
-                                target_name=part_name,
-                                decimate_mod_ratio=self.decimate_mod_ratio,
-                                source_visual_names=[visual_obj.name],
-                            )
-                            created_colliders.append(collider_obj)
-                    else:
-                        parts = run_coacd_decomposition(
-                            visual_obj=visual_obj,
-                            threshold=self.threshold,
-                            max_convex_hull=self.max_convex_hull,
-                            preprocess_mode=self.preprocess_mode,
-                        )
-                        for i, (part_verts, part_faces) in enumerate(parts):
-                            part_name = f"col_{visual_obj.name}_part_{i}"
-                            mesh_data = bpy.data.meshes.new(part_name)
-                            mesh_data.from_pydata(
-                                part_verts.tolist(), [], part_faces.tolist()
-                            )
-                            mesh_data.update()
-
-                            collider_obj = bpy.data.objects.new(part_name, mesh_data)
-                            if visual_obj.parent:
-                                collider_obj.parent = visual_obj.parent
-                                collider_obj.parent_type = visual_obj.parent_type
-                                collider_obj.matrix_parent_inverse = (
-                                    visual_obj.matrix_parent_inverse.copy()
-                                )
-                            collider_obj.matrix_world = visual_obj.matrix_world.copy()
-                            bpy.context.scene.collection.objects.link(collider_obj)
-
-                            setup_decomposition_collider(
-                                collider_obj=collider_obj,
-                                visual_obj=visual_obj,
-                                target_name=part_name,
-                                decimate_mod_ratio=self.decimate_mod_ratio,
-                                source_visual_names=[visual_obj.name],
-                            )
-                            created_colliders.append(collider_obj)
-            else:
-                primary_obj = selected_mesh_objs[0]
+            for visual_obj in selected_mesh_objs:
                 parts = run_coacd_decomposition(
-                    visual_obj=primary_obj,
+                    visual_obj=visual_obj,
                     threshold=self.threshold,
                     max_convex_hull=self.max_convex_hull,
                     preprocess_mode=self.preprocess_mode,
-                    combined_objects=selected_mesh_objs,
                 )
                 for i, (part_verts, part_faces) in enumerate(parts):
-                    part_name = f"col_{primary_obj.name}_part_{i}"
+                    part_name = f"col_{visual_obj.name}_part_{i}"
                     mesh_data = bpy.data.meshes.new(part_name)
-                    mesh_data.from_pydata(part_verts.tolist(), [], part_faces.tolist())
+                    mesh_data.from_pydata(
+                        part_verts.tolist(), [], part_faces.tolist()
+                    )
                     mesh_data.update()
 
                     collider_obj = bpy.data.objects.new(part_name, mesh_data)
-                    if primary_obj.parent:
-                        collider_obj.parent = primary_obj.parent
-                        collider_obj.parent_type = primary_obj.parent_type
+                    if visual_obj.parent:
+                        collider_obj.parent = visual_obj.parent
+                        collider_obj.parent_type = visual_obj.parent_type
                         collider_obj.matrix_parent_inverse = (
-                            primary_obj.matrix_parent_inverse.copy()
+                            visual_obj.matrix_parent_inverse.copy()
                         )
-                    collider_obj.matrix_world = primary_obj.matrix_world.copy()
+                    collider_obj.matrix_world = visual_obj.matrix_world.copy()
                     bpy.context.scene.collection.objects.link(collider_obj)
+
+                    part_color = get_random_collider_color(index=part_counter, seed=run_seed)
+                    part_counter += 1
 
                     setup_decomposition_collider(
                         collider_obj=collider_obj,
-                        visual_obj=primary_obj,
+                        visual_obj=visual_obj,
                         target_name=part_name,
                         decimate_mod_ratio=self.decimate_mod_ratio,
-                        source_visual_names=target_names,
+                        source_visual_names=[visual_obj.name],
+                        color=part_color,
+                        mesh_inflate=self.mesh_inflate,
                     )
                     created_colliders.append(collider_obj)
 
@@ -2217,11 +2089,32 @@ class MESH_OT_create_convex_decomposition(bpy.types.Operator):
         if created_colliders:
             context.view_layer.objects.active = created_colliders[0]
 
+        # Ensure viewport shading mode is OBJECT once for multi-color display
+        if getattr(context, "screen", None):
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            space.shading.color_type = "OBJECT"
+
+        # Register timer to revert colliders to default pink once the last operation panel is finalized/closed
+        if not bpy.app.background and created_colliders:
+            global _decomposition_color_timer
+            if _decomposition_color_timer and bpy.app.timers.is_registered(_decomposition_color_timer):
+                try:
+                    bpy.app.timers.unregister(_decomposition_color_timer)
+                except Exception:
+                    pass
+            created_names = [c.name for c in created_colliders]
+            _decomposition_color_timer = _create_decomposition_finalize_callback(created_names)
+            bpy.app.timers.register(_decomposition_color_timer, first_interval=0.2)
+
         self.report(
             {"INFO"},
             f"Convex decomposition generated {len(created_colliders)} convex hull collider(s)."
         )
         return {"FINISHED"}
+
 
 
 

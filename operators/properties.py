@@ -545,6 +545,74 @@ bpy.types.WindowManager.pymeshlab_install_status = bpy.props.StringProperty(
 )
 
 # Convex Decomposition (CoACD) Scene Properties
+_COACD_PRESETS = {
+    "LOW": (0.35, 8),
+    "MEDIUM": (0.20, 16),
+    "HIGH": (0.05, 32),
+}
+
+_UPDATING_COACD_PROPS = False
+
+
+def _on_coacd_preset_changed(self, context):
+    global _UPDATING_COACD_PROPS
+    if _UPDATING_COACD_PROPS:
+        return
+    preset = getattr(self, "coacd_preset", "MEDIUM")
+    if preset in _COACD_PRESETS:
+        thresh, max_ch = _COACD_PRESETS[preset]
+        _UPDATING_COACD_PROPS = True
+        try:
+            self.coacd_threshold = thresh
+            self.coacd_max_convex_hull = max_ch
+        finally:
+            _UPDATING_COACD_PROPS = False
+
+
+def _on_coacd_value_changed(self, context):
+    global _UPDATING_COACD_PROPS
+    if _UPDATING_COACD_PROPS:
+        return
+    thresh = round(float(getattr(self, "coacd_threshold", 0.20)), 3)
+    max_ch = int(getattr(self, "coacd_max_convex_hull", 16))
+    matched_preset = "CUSTOM"
+    for p_name, (p_thresh, p_max_ch) in _COACD_PRESETS.items():
+        if abs(thresh - p_thresh) < 1e-4 and max_ch == p_max_ch:
+            matched_preset = p_name
+            break
+    if getattr(self, "coacd_preset", "") != matched_preset:
+        _UPDATING_COACD_PROPS = True
+        try:
+            self.coacd_preset = matched_preset
+        finally:
+            _UPDATING_COACD_PROPS = False
+
+
+bpy.types.Scene.coacd_preset = bpy.props.EnumProperty(
+    name="Preset",
+    description="Decomposition detail preset",
+    items=[
+        ("LOW", "Low (Fast)", "Coarse hulls, faster generation (Threshold 0.35, Max Hulls 8)"),
+        ("MEDIUM", "Medium (Balanced)", "Balanced fidelity and performance (Threshold 0.20, Max Hulls 16)"),
+        ("HIGH", "High (Detailed)", "Fine details, more hulls (Threshold 0.05, Max Hulls 32)"),
+        ("CUSTOM", "Custom", "Custom user-defined settings"),
+    ],
+    default="MEDIUM",
+    update=_on_coacd_preset_changed,
+)
+
+bpy.types.Scene.coacd_expand = bpy.props.BoolProperty(
+    name="Convex Decomposition",
+    description="Show Convex Decomposition settings and run button",
+    default=False,
+)
+
+bpy.types.Scene.coacd_show_advanced = bpy.props.BoolProperty(
+    name="Advanced",
+    description="Show advanced decomposition settings",
+    default=False,
+)
+
 bpy.types.Scene.coacd_threshold = bpy.props.FloatProperty(
     name="Threshold",
     description=(
@@ -552,11 +620,12 @@ bpy.types.Scene.coacd_threshold = bpy.props.FloatProperty(
         "Lower values produce more parts and capture finer details;\n"
         "higher values produce fewer, coarser hulls."
     ),
-    default=0.05,
+    default=0.2,
     min=0.01,
     max=1.0,
     step=0.01,
     precision=3,
+    update=_on_coacd_value_changed,
 )
 
 bpy.types.Scene.coacd_max_convex_hull = bpy.props.IntProperty(
@@ -565,6 +634,7 @@ bpy.types.Scene.coacd_max_convex_hull = bpy.props.IntProperty(
     default=16,
     min=0,
     max=128,
+    update=_on_coacd_value_changed,
 )
 
 bpy.types.Scene.coacd_preprocess_mode = bpy.props.EnumProperty(
@@ -589,10 +659,13 @@ bpy.types.Scene.coacd_decimate_mod_ratio = bpy.props.FloatProperty(
     step=0.1,
 )
 
-bpy.types.Scene.coacd_per_obj = bpy.props.BoolProperty(
-    name="Per Object",
-    description="Decompose each selected object individually instead of combining them into a single decomposition.",
-    default=True,
+bpy.types.Scene.coacd_mesh_inflate = bpy.props.FloatProperty(
+    name="Mesh Margin",
+    description="Inflate the collision geometry to account for lower mesh resolution (in mm).",
+    default=0.0,
+    min=0.0,
+    soft_max=10.0,
+    step=10,
 )
 
 # CoACD Installation State
@@ -606,39 +679,5 @@ bpy.types.WindowManager.coacd_install_status = bpy.props.StringProperty(
     name="CoACD Install Status",
     description="Current status of CoACD installation",
     default="",
-)
-
-# Convex Decomposition Detail Box Properties
-bpy.types.Object.is_detail_box = bpy.props.BoolProperty(
-    name="Is Detail Box",
-    description="Indicates whether this object is a region-of-interest detail box for convex decomposition",
-    default=False,
-)
-
-bpy.types.Object.detail_box_target = bpy.props.StringProperty(
-    name="Target Object",
-    description="Name of the visual object this detail box refines",
-    default="",
-)
-
-bpy.types.Object.detail_threshold = bpy.props.FloatProperty(
-    name="Detail Threshold",
-    description=(
-        "Concavity tolerance for the volume inside this detail box.\n"
-        "Lower values produce more convex hulls for fine geometric features (slots, holes, etc.)"
-    ),
-    default=0.02,
-    min=0.001,
-    max=1.0,
-    step=0.01,
-    precision=3,
-)
-
-bpy.types.Object.detail_max_convex_hull = bpy.props.IntProperty(
-    name="Detail Max Hulls",
-    description="Maximum number of convex hulls to generate inside this detail box (0 for unlimited)",
-    default=16,
-    min=0,
-    max=128,
 )
 
